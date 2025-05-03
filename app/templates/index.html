@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CrawlBot - Công cụ thu thập dữ liệu sản phẩm</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .main-container {
+            max-width: 900px;
+            margin: 30px auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+        }
+        .nav-tabs .nav-link {
+            color: #495057;
+            font-weight: 500;
+        }
+        .nav-tabs .nav-link.active {
+            font-weight: 600;
+            color: #0d6efd;
+        }
+        .form-container {
+            padding: 20px 0;
+        }
+        .file-input-label {
+            display: block;
+            padding: 20px;
+            border: 2px dashed #ccc;
+            border-radius: 5px;
+            text-align: center;
+            cursor: pointer;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+        }
+        .file-input-label:hover {
+            border-color: #0d6efd;
+            background-color: #f8f9fa;
+        }
+        .file-input-label span {
+            display: block;
+            margin-top: 10px;
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+        .alert {
+            margin-top: 15px;
+        }
+        .steps {
+            counter-reset: step;
+            margin-bottom: 20px;
+        }
+        .step {
+            position: relative;
+            padding-left: 35px;
+            margin-bottom: 15px;
+        }
+        .step:before {
+            content: counter(step);
+            counter-increment: step;
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background-color: #0d6efd;
+            color: white;
+            text-align: center;
+            line-height: 25px;
+            font-size: 0.9rem;
+        }
+        .data-format {
+            background-color: #f8f9fa;
+            border-left: 4px solid #0d6efd;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 0 5px 5px 0;
+        }
+        .data-format h5 {
+            margin-top: 0;
+            color: #0d6efd;
+        }
+        .data-format code {
+            display: block;
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-size: 0.85rem;
+        }
+        /* Thêm style cho progress bar */
+        .progress-container {
+            display: none;
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+        .progress {
+            height: 25px;
+        }
+        .progress-bar {
+            line-height: 25px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        #progress-message {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container main-container">
+        <h1 class="text-center mb-4">CrawlBot</h1>
+        <h5 class="text-center text-muted mb-4">Công cụ thu thập dữ liệu sản phẩm từ website</h5>
+
+        {% if error %}
+        <div class="alert alert-danger">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        {% if success_message %}
+        <div class="alert alert-success">
+            {{ success_message }}
+        </div>
+        {% endif %}
+
+        <!-- Thanh tiến trình -->
+        <div id="progress-container" class="progress-container">
+            <div class="progress">
+                <div id="progress-bar" class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+            </div>
+            <div id="progress-message">Đang chuẩn bị...</div>
+        </div>
+
+        {% if download_url %}
+        <div class="alert alert-success mb-4">
+            Thu thập dữ liệu thành công! <a href="{{ download_url }}" class="alert-link">Tải xuống kết quả</a>
+        </div>
+        {% endif %}
+
+        <ul class="nav nav-tabs mb-4" id="myTab" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="extract-tab" data-bs-toggle="tab" data-bs-target="#extract" type="button" role="tab" aria-controls="extract" aria-selected="true">
+                    1. Thu thập liên kết sản phẩm
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="scrape-tab" data-bs-toggle="tab" data-bs-target="#scrape" type="button" role="tab" aria-controls="scrape" aria-selected="false">
+                    2. Thu thập thông tin sản phẩm
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="images-tab" data-bs-toggle="tab" data-bs-target="#images" type="button" role="tab" aria-controls="images" aria-selected="false">
+                    3. Tải ảnh sản phẩm Autonics
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="view-images-tab" data-bs-toggle="tab" data-bs-target="#view-images" type="button" role="tab" aria-controls="view-images" aria-selected="false">
+                    4. Chuyển đổi ảnh JPG sang WebP
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="jpg-download-tab" data-bs-toggle="tab" data-bs-target="#jpg-download" type="button" role="tab" aria-controls="jpg-download" aria-selected="false">
+                    5. Tải ảnh chất lượng cao (JPG)
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="pdf-download-tab" data-bs-toggle="tab" data-bs-target="#pdf-download" type="button" role="tab" aria-controls="pdf-download" aria-selected="false">
+                    6. Tải tài liệu PDF sản phẩm từ URL BAA.vn
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="baa-images-tab" data-bs-toggle="tab" data-bs-target="#baa-images" type="button" role="tab" aria-controls="baa-images" aria-selected="false">
+                    7. Tải ảnh sản phẩm từ BAA.vn
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="compare-products-tab" data-bs-toggle="tab" data-bs-target="#compare-products" type="button" role="tab" aria-controls="compare-products" aria-selected="false">
+                    <i class="bi bi-bar-chart-line"></i> So sánh mã sản phẩm
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="filter-products-tab" data-bs-toggle="tab" data-bs-target="#filter-products" type="button" role="tab" aria-controls="filter-products" aria-selected="false">
+                    <i class="bi bi-funnel"></i> Lọc mã sản phẩm
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="myTabContent">
+            <!-- Tab thu thập liên kết sản phẩm -->
+            <div class="tab-pane fade show active" id="extract" role="tabpanel" aria-labelledby="extract-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Thu thập liên kết sản phẩm từ danh mục</h4>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <p>Tạo một file <strong>TXT</strong> chứa danh sách các đường link danh mục sản phẩm (mỗi link trên một dòng)</p>
+                        </div>
+                        <div class="step">
+                            <p>Tải file TXT lên hệ thống</p>
+                        </div>
+                        <div class="step">
+                            <p>Nhấn nút "Thu thập liên kết" để bắt đầu quá trình thu thập</p>
+                        </div>
+                    </div>
+                    
+                    <form action="{{ url_for('main.extract_links') }}" method="post" enctype="multipart/form-data" class="mt-4">
+                        <label for="link_file" class="file-input-label">
+                            <i class="bi bi-cloud-arrow-up fs-1"></i>
+                            <span>Chọn file TXT chứa danh sách URL danh mục</span>
+                        </label>
+                        <input type="file" name="link_file" id="link_file" style="display: none;" accept=".txt" onchange="updateFileName(this, 'link_file_name')">
+                        <div id="link_file_name" class="mb-3"></div>
+                        
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-link-45deg"></i> Thu thập liên kết
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Tab thu thập thông tin sản phẩm -->
+            <div class="tab-pane fade" id="scrape" role="tabpanel" aria-labelledby="scrape-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Thu thập thông tin sản phẩm từ liên kết</h4>
+                    
+                    <div class="data-format">
+                        <h5>Thông tin được trích xuất</h5>
+                        <p>Hệ thống sẽ tự động trích xuất các thông tin sau:</p>
+                        <ol>
+                            <li><strong>STT</strong>: Số thứ tự tự động tăng</li>
+                            <li><strong>Mã sản phẩm</strong>: Mã được lấy từ các thẻ có class như "product__symbol__value", "sku", v.v.</li>
+                            <li><strong>Tên sản phẩm</strong>: Tên được lấy từ thẻ h1 có class như "product__name", v.v.</li>
+                            <li><strong>Tổng quan</strong>: Bảng thông số kỹ thuật được định dạng HTML</li>
+                        </ol>
+                    </div>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <p>Tải lên file <strong>TXT</strong> chứa danh sách các đường link sản phẩm (kết quả từ bước 1 hoặc file tự tạo, mỗi link trên một dòng)</p>
+                        </div>
+                        <div class="step">
+                            <p>Tải lên file <strong>Excel</strong> mẫu chứa tiêu đề các cột thông tin cần thu thập</p>
+                        </div>
+                        <div class="step">
+                            <p>Nhấn nút "Thu thập thông tin" để bắt đầu quá trình thu thập</p>
+                        </div>
+                    </div>
+
+                    <form action="/scrape-products" method="post" enctype="multipart/form-data" id="scrape-form">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="product_link_file" class="file-input-label">
+                                    <i class="bi bi-link-45deg fs-3"></i>
+                                    <div class="mt-2">File TXT chứa danh sách liên kết sản phẩm</div>
+                                    <span>Chỉ chấp nhận file .txt</span>
+                                    <input type="file" id="product_link_file" name="product_link_file" class="d-none" accept=".txt">
+                                </label>
+                                <div id="product_link_file_name" class="mb-3 text-muted"></div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="excel_template" class="file-input-label">
+                                    <i class="bi bi-file-earmark-excel fs-3"></i>
+                                    <div class="mt-2">File Excel mẫu chứa tiêu đề các cột thông tin</div>
+                                    <span>Chỉ chấp nhận file .xlsx, .xls</span>
+                                    <input type="file" id="excel_template" name="excel_template" class="d-none" accept=".xlsx, .xls">
+                                </label>
+                                <div id="excel_template_name" class="mb-3 text-muted"></div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Thu thập thông tin sản phẩm</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Tab tải ảnh sản phẩm Autonics -->
+            <div class="tab-pane fade" id="images" role="tabpanel" aria-labelledby="images-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Tải ảnh sản phẩm từ website Autonics</h4>
+                    
+                    <div class="data-format">
+                        <h5>Thông tin về chức năng</h5>
+                        <p>Chức năng này sẽ tự động tìm kiếm và tải ảnh sản phẩm từ trang web Autonics dựa trên mã sản phẩm:</p>
+                        <ol>
+                            <li>Đọc danh sách mã sản phẩm từ file TXT</li>
+                            <li>Tự động tìm kiếm sản phẩm trên website <a href="https://www.autonics.com/vn/main" target="_blank">Autonics</a></li>
+                            <li>Trích xuất và tải ảnh sản phẩm</li>
+                            <li>Lưu tất cả ảnh trong một thư mục và nén lại thành file ZIP để tải xuống</li>
+                        </ol>
+                    </div>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <p>Tạo một file <strong>TXT</strong> chứa danh sách mã sản phẩm Autonics (mỗi mã sản phẩm trên một dòng)</p>
+                        </div>
+                        <div class="step">
+                            <p>Tải file TXT lên hệ thống</p>
+                        </div>
+                        <div class="step">
+                            <p>Nhấn nút "Tải ảnh sản phẩm" để bắt đầu quá trình tìm kiếm và tải ảnh</p>
+                        </div>
+                    </div>
+
+                    <form action="/download-images" method="post" enctype="multipart/form-data" id="images-form">
+                        <label for="product_code_file" class="file-input-label">
+                            <i class="bi bi-image fs-3"></i>
+                            <div class="mt-2">File TXT chứa danh sách mã sản phẩm Autonics</div>
+                            <span>Chỉ chấp nhận file .txt</span>
+                            <input type="file" id="product_code_file" name="product_code_file" class="d-none" accept=".txt">
+                        </label>
+                        <div id="product_code_file_name" class="mb-3 text-muted"></div>
+                        <button type="submit" class="btn btn-primary w-100">Tải ảnh sản phẩm</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Tab xem ảnh đã tải xuống -->
+            <div class="tab-pane fade" id="view-images" role="tabpanel" aria-labelledby="view-images-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Chuyển đổi ảnh JPG sang WebP</h4>
+                    
+                    <div class="data-format">
+                        <h5>Thông tin về chức năng</h5>
+                        <p>Chức năng này cho phép bạn tải lên ảnh JPG và chuyển đổi sang định dạng WebP:</p>
+                        <ol>
+                            <li>Tải lên các file ảnh định dạng JPG, JPEG, PNG</li>
+                            <li>Hệ thống sẽ tự động chuyển đổi sang định dạng WebP</li>
+                            <li>Tải xuống file WebP sau khi chuyển đổi</li>
+                        </ol>
+                    </div>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <p>Chọn các file ảnh cần chuyển đổi (JPG, JPEG, PNG)</p>
+                        </div>
+                        <div class="step">
+                            <p>Nhấn nút "Chuyển đổi sang WebP" để bắt đầu quá trình chuyển đổi</p>
+                        </div>
+                        <div class="step">
+                            <p>Tải xuống các file đã chuyển đổi khi hoàn thành</p>
+                        </div>
+                    </div>
+
+                    <form action="/convert-to-webp" method="post" enctype="multipart/form-data" id="convert-form">
+                        <label for="image_files" class="file-input-label">
+                            <i class="bi bi-images fs-3"></i>
+                            <div class="mt-2">Chọn file ảnh cần chuyển đổi</div>
+                            <span>Chấp nhận file .jpg, .jpeg, .png</span>
+                            <input type="file" id="image_files" name="image_files" class="d-none" accept=".jpg,.jpeg,.png" multiple>
+                        </label>
+                        <div id="image_files_name" class="mb-3 text-muted"></div>
+                        <button type="submit" class="btn btn-primary w-100">Chuyển đổi sang WebP</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Tab tải ảnh chất lượng cao JPG -->
+            <div class="tab-pane fade" id="jpg-download" role="tabpanel" aria-labelledby="jpg-download-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Tải ảnh sản phẩm chất lượng cao (JPG)</h4>
+                    
+                    <div class="data-format">
+                        <h5>Thông tin về chức năng</h5>
+                        <p>Chức năng này cho phép tải ảnh sản phẩm Autonics với chất lượng cao và lưu dưới định dạng JPG:</p>
+                        <ol>
+                            <li>Tải ảnh sản phẩm chất lượng cao nhất có thể</li>
+                            <li>Lưu trữ dưới định dạng JPG với chất lượng tối ưu</li>
+                            <li>Đảm bảo màu sắc, chi tiết và độ sắc nét như ảnh gốc</li>
+                        </ol>
+                    </div>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <p>Tạo một file <strong>TXT</strong> chứa danh sách mã sản phẩm Autonics (mỗi mã sản phẩm trên một dòng)</p>
+                        </div>
+                        <div class="step">
+                            <p>Tải file TXT lên hệ thống</p>
+                        </div>
+                        <div class="step">
+                            <p>Nhấn nút "Tải ảnh JPG chất lượng cao" để bắt đầu quá trình tìm kiếm và tải ảnh</p>
+                        </div>
+                    </div>
+
+                    <form action="/download-jpg-images" method="post" enctype="multipart/form-data" id="jpg-images-form">
+                        <label for="jpg_product_code_file" class="file-input-label">
+                            <i class="bi bi-image fs-3"></i>
+                            <div class="mt-2">File TXT chứa danh sách mã sản phẩm Autonics</div>
+                            <span>Chỉ chấp nhận file .txt</span>
+                            <input type="file" id="jpg_product_code_file" name="product_code_file" class="d-none" accept=".txt">
+                        </label>
+                        <div id="jpg_product_code_file_name" class="mb-3 text-muted"></div>
+                        <button type="submit" class="btn btn-primary w-100">Tải ảnh JPG chất lượng cao</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Tab tải tài liệu PDF -->
+            <div class="tab-pane fade" id="pdf-download" role="tabpanel" aria-labelledby="pdf-download-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Tải tài liệu PDF sản phẩm từ URL BAA.vn</h4>
+                    
+                    <div class="data-format">
+                        <h5>Thông tin về chức năng</h5>
+                        <p>Chức năng này cho phép tải tất cả tài liệu PDF của sản phẩm từ các URL BAA.vn:</p>
+                        <ol>
+                            <li>Truy cập trực tiếp vào trang sản phẩm từ URL được cung cấp</li>
+                            <li>Trích xuất các link tài liệu PDF từ trang chi tiết sản phẩm</li>
+                            <li>Tải toàn bộ tài liệu về với tên gốc</li>
+                            <li>Tổ chức tài liệu theo thư mục sản phẩm</li>
+                            <li>Dễ dàng truy cập thông tin kỹ thuật và hướng dẫn sử dụng</li>
+                        </ol>
+                    </div>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <p>Tạo một file <strong>TXT</strong> chứa danh sách các URL sản phẩm từ BAA.vn (mỗi URL trên một dòng)</p>
+                            <p class="text-muted">Ví dụ: https://baa.vn/vn/san-pham/bo-chuyen-doi-nhiet-do-autonics-kt-502h0_60329</p>
+                        </div>
+                        <div class="step">
+                            <p>Tải file TXT lên hệ thống</p>
+                        </div>
+                        <div class="step">
+                            <p>Nhấn nút "Tải tài liệu PDF" để bắt đầu quá trình trích xuất và tải tài liệu</p>
+                        </div>
+                    </div>
+
+                    <form action="/download-documents" method="post" enctype="multipart/form-data" id="pdf-documents-form">
+                        <label for="pdf_product_code_file" class="file-input-label">
+                            <i class="bi bi-file-pdf fs-3"></i>
+                            <div class="mt-2">File TXT chứa danh sách URL sản phẩm BAA.vn</div>
+                            <span>Chỉ chấp nhận file .txt</span>
+                            <input type="file" id="pdf_product_code_file" name="product_code_file" class="d-none" accept=".txt">
+                        </label>
+                        <div id="pdf_product_code_file_name" class="mb-3 text-muted"></div>
+                        <button type="submit" class="btn btn-primary w-100">Tải tài liệu PDF</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Tab tải ảnh sản phẩm từ BAA.vn -->
+            <div class="tab-pane fade" id="baa-images" role="tabpanel" aria-labelledby="baa-images-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Tải ảnh sản phẩm từ BAA.vn</h4>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <p>Tạo một file <strong>TXT</strong> chứa danh sách các URL sản phẩm từ BAA.vn (mỗi URL trên một dòng)</p>
+                        </div>
+                        <div class="step">
+                            <p>Tải file TXT lên hệ thống</p>
+                        </div>
+                        <div class="step">
+                            <p>Nhấn nút "Tải ảnh sản phẩm" để bắt đầu quá trình tải ảnh</p>
+                        </div>
+                    </div>
+                    
+                    <div class="data-format">
+                        <h5>Thông tin về chức năng</h5>
+                        <ul>
+                            <li>Tự động truy cập vào từng URL sản phẩm</li>
+                            <li>Tìm chính xác ảnh gốc kích thước lớn (800px) của sản phẩm:</li>
+                            <ul>
+                                <li>Ưu tiên ảnh từ <code>img.btn-image-view-360</code> (ảnh chính hiển thị trên trang sản phẩm)</li>
+                                <li>Tìm trong cấu trúc modal khi click vào ảnh sản phẩm</li>
+                                <li>Tự động chuyển đổi từ kích thước nhỏ sang kích thước lớn (800px)</li>
+                            </ul>
+                            <li>Trích xuất chính xác mã sản phẩm từ phần tử <code>span.product__symbol__value</code></li>
+                            <li>Lưu ảnh với tên là mã sản phẩm của nhà sản xuất (ví dụ: RY42PT1P.webp)</li>
+                            <li>Tạo file Excel báo cáo chi tiết kết quả tải ảnh</li>
+                        </ul>
+                        <div class="alert alert-info mt-3">
+                            <i class="bi bi-info-circle-fill me-2"></i> <strong>Cải tiến mới:</strong> Chức năng đã được tối ưu để tìm chính xác ảnh gốc, trích xuất đúng mã sản phẩm từ trang web và đặt tên file theo mã sản phẩm của nhà sản xuất.
+                        </div>
+                    </div>
+                    
+                    <form action="{{ url_for('main.download_baa_images') }}" method="post" enctype="multipart/form-data" class="mt-4">
+                        <label for="product_links_file" class="file-input-label">
+                            <i class="bi bi-cloud-arrow-up fs-1"></i>
+                            <span>Chọn file TXT chứa danh sách URL sản phẩm</span>
+                        </label>
+                        <input type="file" name="product_links_file" id="product_links_file" style="display: none;" accept=".txt" onchange="updateFileName(this, 'product_links_file_name')">
+                        <div id="product_links_file_name" class="mb-3"></div>
+                        
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-image"></i> Tải ảnh sản phẩm
+                        </button>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Tab so sánh mã sản phẩm -->
+            <div class="tab-pane fade" id="compare-products" role="tabpanel" aria-labelledby="compare-products-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">So sánh mã sản phẩm giữa hai file Excel</h4>
+                    
+                    <div class="data-format">
+                        <h5>Thông tin về chức năng</h5>
+                        <p>Chức năng này cho phép so sánh mã sản phẩm từ hai file Excel và phân loại mã trùng lặp và không trùng lặp:</p>
+                        <ol>
+                            <li>Đọc hai file Excel với mã sản phẩm</li>
+                            <li>Phân tích và xác định mã sản phẩm trùng lặp giữa hai file</li>
+                            <li>Phân loại mã sản phẩm không trùng lặp (độc nhất ở mỗi file)</li>
+                            <li>Tạo file Excel báo cáo với các sheet riêng biệt cho:
+                                <ul>
+                                    <li>Mã sản phẩm trùng lặp giữa hai file</li>
+                                    <li>Mã sản phẩm chỉ có trong file 1</li>
+                                    <li>Mã sản phẩm chỉ có trong file 2</li>
+                                </ul>
+                            </li>
+                        </ol>
+                    </div>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <p>Tải lên hai file <strong>Excel</strong> chứa mã sản phẩm cần so sánh</p>
+                        </div>
+                        <div class="step">
+                            <p>Nhấn nút "So sánh mã sản phẩm" để bắt đầu quá trình phân tích</p>
+                        </div>
+                        <div class="step">
+                            <p>Tải xuống file Excel kết quả với các sheet phân loại</p>
+                        </div>
+                    </div>
+
+                    <form action="{{ url_for('main.compare_product_codes') }}" method="post" enctype="multipart/form-data" id="compare-products-form">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="excel_file_1" class="file-input-label">
+                                    <i class="bi bi-file-earmark-excel fs-3"></i>
+                                    <div class="mt-2">File Excel #1</div>
+                                    <span>Chỉ chấp nhận file .xlsx, .xls, .csv</span>
+                                    <input type="file" id="excel_file_1" name="excel_file_1" class="d-none" accept=".xlsx, .xls, .csv">
+                                </label>
+                                <div id="excel_file_1_name" class="mb-3 text-muted"></div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="excel_file_2" class="file-input-label">
+                                    <i class="bi bi-file-earmark-excel fs-3"></i>
+                                    <div class="mt-2">File Excel #2</div>
+                                    <span>Chỉ chấp nhận file .xlsx, .xls, .csv</span>
+                                    <input type="file" id="excel_file_2" name="excel_file_2" class="d-none" accept=".xlsx, .xls, .csv">
+                                </label>
+                                <div id="excel_file_2_name" class="mb-3 text-muted"></div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">So sánh mã sản phẩm</button>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Tab lọc mã sản phẩm -->
+            <div class="tab-pane fade" id="filter-products" role="tabpanel" aria-labelledby="filter-products-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Lọc mã sản phẩm từ file Excel</h4>
+                    
+                    <div class="data-format">
+                        <h5>Thông tin về chức năng</h5>
+                        <p>Chức năng này cho phép lọc các mã sản phẩm khỏi file Excel:</p>
+                        <ol>
+                            <li>Nhập danh sách mã sản phẩm cần xóa (mỗi mã trên một dòng)</li>
+                            <li>Tải lên file Excel chứa dữ liệu sản phẩm</li>
+                            <li>Hệ thống sẽ tự động xóa các dòng có mã sản phẩm (cột B) trùng với danh sách đã nhập</li>
+                            <li>Tạo file Excel mới với các sheet:
+                                <ul>
+                                    <li>Dữ liệu đã lọc: chứa dữ liệu sau khi đã xóa các mã</li>
+                                    <li>Mã đã xóa: chứa danh sách các dòng đã bị xóa</li>
+                                    <li>Tổng hợp: báo cáo số lượng dữ liệu trước và sau khi lọc</li>
+                                </ul>
+                            </li>
+                        </ol>
+                    </div>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <p>Nhập danh sách mã sản phẩm cần xóa (mỗi mã một dòng)</p>
+                        </div>
+                        <div class="step">
+                            <p>Tải lên file <strong>Excel</strong> chứa dữ liệu sản phẩm (mã sản phẩm ở cột B)</p>
+                        </div>
+                        <div class="step">
+                            <p>Nhấn nút "Lọc mã sản phẩm" để tiến hành xử lý</p>
+                        </div>
+                    </div>
+
+                    <form action="{{ url_for('main.filter_products') }}" method="post" enctype="multipart/form-data" id="filter-products-form">
+                        <div class="mb-3">
+                            <label for="product_codes" class="form-label">Danh sách mã sản phẩm cần xóa (mỗi mã một dòng):</label>
+                            <textarea id="product_codes" name="product_codes" class="form-control" rows="10" required placeholder="Nhập mã sản phẩm vào đây..."></textarea>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="excel_file" class="file-input-label">
+                                <i class="bi bi-file-earmark-excel fs-3"></i>
+                                <div class="mt-2">File Excel chứa dữ liệu sản phẩm</div>
+                                <span>Chỉ chấp nhận file .xlsx, .xls</span>
+                                <input type="file" id="excel_file" name="excel_file" class="d-none" accept=".xlsx, .xls" required>
+                            </label>
+                            <div id="excel_file_name" class="mb-3 text-muted"></div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-funnel"></i> Lọc mã sản phẩm
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Thêm thư viện SocketIO -->
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    <script>
+        // Kết nối Socket.IO
+        const socket = io();
+        
+        // Lắng nghe sự kiện cập nhật tiến trình
+        socket.on('progress_update', function(data) {
+            // Hiển thị thanh tiến trình
+            const progressContainer = document.getElementById('progress-container');
+            progressContainer.style.display = 'block';
+            
+            // Cập nhật giá trị thanh tiến trình
+            const progressBar = document.getElementById('progress-bar');
+            progressBar.style.width = data.percent + '%';
+            progressBar.setAttribute('aria-valuenow', data.percent);
+            progressBar.innerText = data.percent + '%';
+            
+            // Cập nhật thông báo
+            const progressMessage = document.getElementById('progress-message');
+            progressMessage.innerText = data.message;
+            
+            // Nếu hoàn thành, tự động tải xuống kết quả
+            if (data.percent === 100) {
+                setTimeout(function() {
+                    // Ẩn thanh tiến trình sau 3 giây
+                    setTimeout(function() {
+                        progressContainer.style.display = 'none';
+                    }, 3000);
+                }, 1000);
+            }
+        });
+
+        // Hiển thị tên file khi người dùng chọn file
+        document.getElementById('link_file').addEventListener('change', function(e) {
+            if (this.files.length > 0) {
+                document.getElementById('link_file_name').textContent = 'File đã chọn: ' + this.files[0].name;
+            }
+        });
+
+        document.getElementById('product_link_file').addEventListener('change', function(e) {
+            if (this.files.length > 0) {
+                document.getElementById('product_link_file_name').textContent = 'File đã chọn: ' + this.files[0].name;
+            }
+        });
+
+        document.getElementById('excel_template').addEventListener('change', function(e) {
+            if (this.files.length > 0) {
+                document.getElementById('excel_template_name').textContent = 'File đã chọn: ' + this.files[0].name;
+            }
+        });
+
+        document.getElementById('product_code_file').addEventListener('change', function(e) {
+            if (this.files.length > 0) {
+                document.getElementById('product_code_file_name').textContent = 'File đã chọn: ' + this.files[0].name;
+            }
+        });
+        
+        // Hiển thị danh sách các file ảnh đã chọn
+        document.getElementById('image_files').addEventListener('change', function(e) {
+            const fileList = this.files;
+            if (fileList.length > 0) {
+                let fileNames = '';
+                if (fileList.length <= 5) {
+                    // Hiển thị tên tất cả các file nếu có ít hơn 5 file
+                    for (let i = 0; i < fileList.length; i++) {
+                        fileNames += (i > 0 ? '<br>' : '') + (i + 1) + '. ' + fileList[i].name;
+                    }
+                } else {
+                    // Nếu có nhiều hơn 5 file, hiển thị 3 file đầu và thông báo số file còn lại
+                    for (let i = 0; i < 3; i++) {
+                        fileNames += (i > 0 ? '<br>' : '') + (i + 1) + '. ' + fileList[i].name;
+                    }
+                    fileNames += '<br>... và ' + (fileList.length - 3) + ' file khác';
+                }
+                document.getElementById('image_files_name').innerHTML = 'Đã chọn ' + fileList.length + ' file:<br>' + fileNames;
+            } else {
+                document.getElementById('image_files_name').textContent = '';
+            }
+        });
+        
+        // Hiển thị tên file đã chọn cho chức năng tải tài liệu PDF
+        document.getElementById('pdf_product_code_file').addEventListener('change', function(e) {
+            if (this.files.length > 0) {
+                document.getElementById('pdf_product_code_file_name').textContent = 'File đã chọn: ' + this.files[0].name;
+            }
+        });
+        
+        // Hiển thị tên file đã chọn cho chức năng tải ảnh JPG
+        document.getElementById('jpg_product_code_file').addEventListener('change', function(e) {
+            if (this.files.length > 0) {
+                document.getElementById('jpg_product_code_file_name').textContent = 'File đã chọn: ' + this.files[0].name;
+            }
+        });
+        
+        // Hiển thị thanh tiến trình khi gửi form
+        document.getElementById('extract-form').addEventListener('submit', function(e) {
+            const fileInput = document.getElementById('link_file');
+            if (fileInput.files.length > 0) {
+                const progressContainer = document.getElementById('progress-container');
+                progressContainer.style.display = 'block';
+                const progressMessage = document.getElementById('progress-message');
+                progressMessage.innerText = 'Đang tải file lên...';
+            }
+        });
+        
+        document.getElementById('scrape-form').addEventListener('submit', function(e) {
+            const linkFile = document.getElementById('product_link_file');
+            const excelFile = document.getElementById('excel_template');
+            if (linkFile.files.length > 0 && excelFile.files.length > 0) {
+                const progressContainer = document.getElementById('progress-container');
+                progressContainer.style.display = 'block';
+                const progressMessage = document.getElementById('progress-message');
+                progressMessage.innerText = 'Đang tải file lên...';
+            }
+        });
+
+        document.getElementById('images-form').addEventListener('submit', function(e) {
+            const fileInput = document.getElementById('product_code_file');
+            if (fileInput.files.length > 0) {
+                const progressContainer = document.getElementById('progress-container');
+                progressContainer.style.display = 'block';
+                const progressMessage = document.getElementById('progress-message');
+                progressMessage.innerText = 'Đang tải file lên...';
+            }
+        });
+        
+        document.getElementById('convert-form').addEventListener('submit', function(e) {
+            const fileInput = document.getElementById('image_files');
+            if (fileInput.files.length > 0) {
+                const progressContainer = document.getElementById('progress-container');
+                progressContainer.style.display = 'block';
+                const progressMessage = document.getElementById('progress-message');
+                progressMessage.innerText = 'Đang tải ' + fileInput.files.length + ' file ảnh lên...';
+            }
+        });
+        
+        document.getElementById('jpg-images-form').addEventListener('submit', function(e) {
+            const fileInput = document.getElementById('jpg_product_code_file');
+            if (fileInput.files.length > 0) {
+                const progressContainer = document.getElementById('progress-container');
+                progressContainer.style.display = 'block';
+                const progressMessage = document.getElementById('progress-message');
+                progressMessage.innerText = 'Đang tải file lên...';
+            }
+        });
+        
+        document.getElementById('pdf-documents-form').addEventListener('submit', function(e) {
+            const fileInput = document.getElementById('pdf_product_code_file');
+            if (fileInput.files.length > 0) {
+                const progressContainer = document.getElementById('progress-container');
+                progressContainer.style.display = 'block';
+                const progressMessage = document.getElementById('progress-message');
+                progressMessage.innerText = 'Đang tải file lên...';
+            }
+        });
+
+        $(document).ready(function() {
+            // Hiển thị tên file khi chọn file trong tab so sánh mã sản phẩm
+            $('#excel_file_1').change(function() {
+                const fileName = $(this).val().split('\\').pop();
+                $('#excel_file_1_name').text(fileName ? 'File đã chọn: ' + fileName : '');
+            });
+            
+            $('#excel_file_2').change(function() {
+                const fileName = $(this).val().split('\\').pop();
+                $('#excel_file_2_name').text(fileName ? 'File đã chọn: ' + fileName : '');
+            });
+            
+            // Hiển thị thanh tiến trình khi gửi form so sánh sản phẩm
+            $('#compare-products-form').submit(function(e) {
+                const file1 = $('#excel_file_1')[0].files;
+                const file2 = $('#excel_file_2')[0].files;
+                
+                if (file1.length > 0 && file2.length > 0) {
+                    const progressContainer = document.getElementById('progress-container');
+                    progressContainer.style.display = 'block';
+                    const progressMessage = document.getElementById('progress-message');
+                    progressMessage.innerText = 'Đang tải file và so sánh mã sản phẩm...';
+                }
+            });
+        });
+    </script>
+</body>
+</html> 
