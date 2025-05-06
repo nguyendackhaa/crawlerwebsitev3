@@ -14,6 +14,10 @@ def create_app():
     os.makedirs(downloads_dir, exist_ok=True)
     app.config['UPLOAD_FOLDER'] = downloads_dir
     
+    # Tạo thư mục logs nếu chưa tồn tại
+    logs_dir = os.path.join(os.path.dirname(app.root_path), 'logs')
+    os.makedirs(logs_dir, exist_ok=True)
+    
     # Đăng ký blueprint
     from app.routes import main_bp
     app.register_blueprint(main_bp)

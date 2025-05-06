@@ -276,7 +276,7 @@ def extract_product_info(url, required_fields=None, index=1):
     """
     
     if not required_fields:
-        required_fields = ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Tổng quan']
+        required_fields = ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Tổng quan', 'Giá']
     
     print(f"Đang trích xuất thông tin từ {url}")
     
@@ -356,6 +356,37 @@ def extract_product_info(url, required_fields=None, index=1):
             if product_code:
                 print(f"Mã sản phẩm: {product_code}")
                 product_info['Mã sản phẩm'] = product_code
+                
+            # Thêm mới: Trích xuất giá sản phẩm
+            product_price = ""
+            
+            # Tìm phần tử div chứa giá
+            price_element = soup.select_one('div.product__card--price span.fw-bold.text-danger.text-start')
+            if price_element:
+                product_price = price_element.text.strip()
+                print(f"Giá sản phẩm: {product_price}")
+                product_info['Giá'] = product_price
+            else:
+                # Thử một số CSS selector khác
+                price_selectors = [
+                    '.product__card--price span',
+                    '.product-price',
+                    '.price-box .price',
+                    '.special-price .price',
+                    '[data-price-type="finalPrice"] .price'
+                ]
+                
+                for selector in price_selectors:
+                    price_element = soup.select_one(selector)
+                    if price_element:
+                        product_price = price_element.text.strip()
+                        print(f"Giá sản phẩm: {product_price}")
+                        product_info['Giá'] = product_price
+                        break
+                        
+            if not product_price:
+                print(f"Không tìm thấy giá sản phẩm trong URL {url}")
+                product_info['Giá'] = ""
             
             # 3. Trích xuất thông số kỹ thuật
             specs_table_html = '<table class="specs-table" border="1" cellpadding="5" style="border-collapse: collapse;"><tbody>'
@@ -925,12 +956,41 @@ def extract_product_urls(url):
             
             # Tạo các URL phân trang dựa trên mẫu cho BAA.vn nếu vẫn không tìm thấy
             if is_baa_special_page and '/page/' not in current_url:
-                base_url = current_url.rstrip('/')
-                for page_num in range(2, 6):  # Thêm từ trang 2 đến trang 5
-                    page_url = f"{base_url}/page/{page_num}/"
-                    if page_url not in processed_pages:
-                        pages_to_process.append(page_url)
-                        print(f"Thêm URL phân trang (tạo tự động): {page_url}")
+                # Kiểm tra số trang thực tế từ thông tin pagination trước khi tạo URL phân trang
+                pagination_numbers = []
+                
+                # Tìm các nút số trang
+                page_nums = soup.select('.pagination li a')
+                for page_num_link in page_nums:
+                    # Lấy text của liên kết phân trang
+                    page_text = page_num_link.get_text(strip=True)
+                    # Kiểm tra nếu text là số trang
+                    if page_text and page_text.isdigit():
+                        pagination_numbers.append(int(page_text))
+                
+                # Nếu tìm thấy các số trang, chỉ tạo URL cho các trang thực tế
+                if pagination_numbers:
+                    max_page = max(pagination_numbers)
+                    base_url = current_url.rstrip('/')
+                    
+                    # Chỉ tạo URL cho các trang từ 2 đến max_page
+                    for page_num in range(2, max_page + 1):
+                        page_url = f"{base_url}/page/{page_num}/"
+                        if page_url not in processed_pages:
+                            pages_to_process.append(page_url)
+                            print(f"Thêm URL phân trang (dựa trên số trang thực tế): {page_url}")
+                else:
+                    # Kiểm tra xem có nút "Trang sau" hay không
+                    next_page = soup.select_one('.pagination li.next a, .pagination a.next, a.next')
+                    if next_page:
+                        # Chỉ tạo URL cho trang tiếp theo
+                        base_url = current_url.rstrip('/')
+                        page_url = f"{base_url}/page/2/"
+                        if page_url not in processed_pages:
+                            pages_to_process.append(page_url)
+                            print(f"Thêm URL phân trang (dựa trên nút Trang sau): {page_url}")
+                    else:
+                        print("Không tìm thấy phân trang, không tạo URL phân trang tự động")
         else:
             # Xử lý cho các trang không phải BAA.vn như trước
             product_containers = []
@@ -1051,8 +1111,8 @@ def scrape_product_info(product_urls, excel_template_path):
     # Gửi thông báo bắt đầu
     socketio.emit('progress_update', {'percent': 0, 'message': f'Bắt đầu thu thập thông tin từ {len(valid_product_urls)} sản phẩm'})
     
-    # Các trường cần thu thập - chỉ lấy 4 trường cần thiết
-    required_fields = ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Tổng quan']
+    # Các trường cần thu thập - thêm cột Giá trước cột Tổng quan
+    required_fields = ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Giá', 'Tổng quan']
     
     print(f"Các trường cần thu thập: {required_fields}")
     
@@ -1094,6 +1154,83 @@ def scrape_product_info(product_urls, excel_template_path):
                 sku_element = soup.select_one('.model-container .model')
                 if sku_element:
                     product_code = sku_element.text.strip()
+            
+            # Extract product price
+            product_price = ''
+            # 1. Ưu tiên tìm giá từ phần tử span.product__price-print với data-root
+            price_element_with_data = soup.select_one('span.product__price-print[data-root]')
+            if price_element_with_data and 'data-root' in price_element_with_data.attrs:
+                data_root = price_element_with_data.get('data-root')
+                if data_root:
+                    try:
+                        price_value = int(data_root)
+                        formatted_price = f"{price_value:,}".replace(",", ".")
+                        
+                        # Tìm đơn vị tiền tệ
+                        price_unit = ""
+                        
+                        # Tìm trong cùng cell hoặc gần kề
+                        parent_td = price_element_with_data.find_parent('td')
+                        if parent_td:
+                            unit_element = parent_td.select_one('span.product__price-unit')
+                            if unit_element:
+                                price_unit = unit_element.text.strip()
+                        
+                        # Nếu không tìm thấy, tìm element kế tiếp
+                        if not price_unit:
+                            next_element = price_element_with_data.find_next_sibling()
+                            if next_element and 'product__price-unit' in next_element.get('class', []):
+                                price_unit = next_element.text.strip()
+                        
+                        # Nếu vẫn không tìm thấy
+                        if not price_unit:
+                            unit_element = soup.select_one('span.product__price-unit')
+                            if unit_element:
+                                price_unit = unit_element.text.strip()
+                            else:
+                                price_unit = "₫"  # Mặc định
+                        
+                        # Định dạng giá cuối cùng
+                        product_price = formatted_price + price_unit
+                        print(f"Giá từ data-root: {product_price}")
+                    except ValueError as e:
+                        print(f"Lỗi khi xử lý giá từ data-root: {str(e)}")
+            
+            # 2. Nếu không tìm thấy giá từ data-root, thử các vị trí thông thường
+            if not product_price:
+                price_selectors = [
+                    'div.product__card--price span.fw-bold.text-danger.text-start',
+                    '.product__card--price span',
+                    '.product__card--price .fw-bold',
+                    '.product-price',
+                    '.product__price-print',
+                    '.price-box .price',
+                    '.special-price .price',
+                    '[data-price-type="finalPrice"] .price'
+                ]
+                
+                for selector in price_selectors:
+                    price_element = soup.select_one(selector)
+                    if price_element:
+                        price_text = price_element.text.strip()
+                        
+                        # Tìm đơn vị tiền tệ
+                        price_unit = ""
+                        unit_element = soup.select_one('span.product__price-unit')
+                        if unit_element:
+                            price_unit = unit_element.text.strip()
+                        
+                        # Định dạng giá
+                        if price_unit and price_unit not in price_text:
+                            product_price = price_text + price_unit
+                        else:
+                            product_price = price_text
+                        
+                        print(f"Giá sản phẩm: {product_price}")
+                        break
+            
+            # 3. Làm sạch giá sản phẩm
+            product_price = clean_price(product_price)
             
             # Tạo bảng HTML để lưu thông số kỹ thuật
             specs_table_html = '<table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; font-family: Arial;"><thead><tr><th>Thông số</th><th>Giá trị</th></tr></thead><tbody>'
@@ -1139,6 +1276,7 @@ def scrape_product_info(product_urls, excel_template_path):
             # Thông tin debug
             print(f"Sản phẩm: {product_name}")
             print(f"Mã sản phẩm: {product_code}")
+            print(f"Giá sản phẩm: {product_price}")
             print(f"Số thông số kỹ thuật thu thập được: {params_count}")
             print(f"Độ dài HTML thông số kỹ thuật: {len(specs_table_html)} ký tự")
             
@@ -1147,6 +1285,7 @@ def scrape_product_info(product_urls, excel_template_path):
                 'STT': i + 1,
                 'Mã sản phẩm': product_code,
                 'Tên sản phẩm': product_name,
+                'Giá': product_price,
                 'Tổng quan': specs_table_html
             }
             
@@ -1170,12 +1309,12 @@ def scrape_product_info(product_urls, excel_template_path):
     # Tạo DataFrame từ thông tin đã thu thập
     results_df = pd.DataFrame(all_products_info)
     
-    # Đảm bảo chỉ có 4 cột cần thiết
+    # Đảm bảo có đủ các cột cần thiết
     for field in required_fields:
         if field not in results_df.columns:
             results_df[field] = ""
     
-    # Chỉ giữ lại 4 cột và đúng thứ tự
+    # Chỉ giữ lại các cột theo thứ tự
     results_df = results_df[required_fields]
     
     # Tạo file Excel tạm để lưu kết quả
@@ -1199,8 +1338,10 @@ def scrape_product_info(product_urls, excel_template_path):
     worksheet.column_dimensions['B'].width = 20
     # Đặt chiều rộng cho cột Tên sản phẩm
     worksheet.column_dimensions['C'].width = 40
+    # Đặt chiều rộng cho cột Giá
+    worksheet.column_dimensions['D'].width = 15
     # Đặt chiều rộng cho cột Tổng quan
-    worksheet.column_dimensions['D'].width = 80
+    worksheet.column_dimensions['E'].width = 80
     
     # Lưu file
     writer.close()
@@ -3604,121 +3745,261 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
 
 def extract_baa_image_url_from_html(html_content):
     """
-    Trích xuất URL ảnh từ cấu trúc HTML của trang BAA.vn
-    
-    Args:
-        html_content: Nội dung HTML của trang sản phẩm
-    
-    Returns:
-        dict: Thông tin về URL ảnh và mã sản phẩm
-            - 'image_urls': Danh sách URL ảnh đã tìm thấy
-            - 'product_code': Mã sản phẩm được trích xuất từ HTML
+    Trích xuất URL ảnh sản phẩm từ HTML
     """
     try:
-        from bs4 import BeautifulSoup
-        
-        image_urls = []
-        product_code = None
+        # Tạo đối tượng BeautifulSoup
         soup = BeautifulSoup(html_content, 'html.parser')
         
-        # PHƯƠNG PHÁP 0: Tìm mã sản phẩm từ span.product__symbol__value
-        product_symbol = soup.select_one('span.product__symbol__value')
-        if product_symbol and product_symbol.text.strip():
-            product_code = product_symbol.text.strip()
-            print(f"  ✓ Tìm thấy mã sản phẩm từ span.product__symbol__value: {product_code}")
+        # Trích xuất URL ảnh và mã sản phẩm
+        image_urls = []
+        product_code = None
         
-        # PHƯƠNG PHÁP 1: Ưu tiên tìm ảnh từ img.btn-image-view-360
-        main_image = soup.select_one('img.btn-image-view-360')
-        if main_image and main_image.get('src'):
-            src = main_image.get('src')
-            if src and src.strip() and 'LOGO-BAA' not in src:
-                # Trích xuất ID series/model và kích thước từ URL
-                pattern = r'/(series|model)/(\d+)/(\d+)/'
-                match = re.search(pattern, src)
-                if match:
-                    type_folder = match.group(1)  # series hoặc model
-                    folder_id = match.group(2)    # ID thư mục (ví dụ: 274)
-                    # Tạo URL mới với kích thước 800
-                    full_size_url = re.sub(pattern, f'/{type_folder}/{folder_id}/800/', src)
-                    image_urls.append(full_size_url)
-                    print(f"  ✓ Tìm thấy ảnh chính từ img.btn-image-view-360: {full_size_url}")
-                else:
-                    # Nếu không tìm thấy pattern, sử dụng URL gốc
-                    image_urls.append(src)
-                    print(f"  ✓ Tìm thấy ảnh chính từ img.btn-image-view-360 (không thể chuyển đổi kích thước): {src}")
+        # Kiểm tra có phần tử image-view-360 không
+        img_element = soup.select_one('img.btn-image-view-360')
+        if img_element and 'src' in img_element.attrs:
+            img_url = img_element['src']
+            if img_url:
+                # Chuyển đổi URL sang kích thước lớn
+                full_url = convert_to_large_image_url(img_url)
+                image_urls.append(full_url)
+                print(f"Đã tìm thấy ảnh chính: {full_url}")
         
-        # PHƯƠNG PHÁP 2: Tìm trong cấu trúc modal khi click vào ảnh
-        if not image_urls:
-            modal_images = soup.select('div.modal-body-image.active img, div.modal-body__view-image img')
-            for img_tag in modal_images:
-                if img_tag and img_tag.get('src'):
-                    src = img_tag.get('src')
-                    if src and src.strip() and 'LOGO-BAA' not in src:
-                        # Trích xuất ID series/model và kích thước từ URL
-                        pattern = r'/(series|model)/(\d+)/(\d+)/'
-                        match = re.search(pattern, src)
-                        if match:
-                            type_folder = match.group(1)  # series hoặc model
-                            folder_id = match.group(2)    # ID thư mục (ví dụ: 274)
-                            # Tạo URL mới với kích thước 800
-                            full_size_url = re.sub(pattern, f'/{type_folder}/{folder_id}/800/', src)
-                            if full_size_url not in image_urls:
-                                image_urls.append(full_size_url)
-                                print(f"  ✓ Tìm thấy ảnh từ modal: {full_size_url}")
-                        else:
-                            # Nếu không tìm thấy pattern, sử dụng URL gốc
-                            if src not in image_urls:
-                                image_urls.append(src)
-                                print(f"  ✓ Tìm thấy ảnh từ modal (không thể chuyển đổi kích thước): {src}")
-        
-        # PHƯƠNG PHÁP 3: Tìm thêm ảnh từ thumbnails (nếu cần)
-        if not image_urls:
-            thumb_images = soup.select('div.modal-body-thumb img, div.modal-body__view-thumb img')
-            for img_tag in thumb_images:
-                if img_tag and img_tag.get('src'):
-                    src = img_tag.get('src')
-                    if src and src.strip() and 'LOGO-BAA' not in src:
-                        # Trích xuất ID series/model và kích thước từ URL
-                        pattern = r'/(series|model)/(\d+)/(\d+)/'
-                        match = re.search(pattern, src)
-                        if match:
-                            type_folder = match.group(1)  # series hoặc model
-                            folder_id = match.group(2)    # ID thư mục (ví dụ: 274)
-                            # Tạo URL mới với kích thước 800
-                            full_size_url = re.sub(pattern, f'/{type_folder}/{folder_id}/800/', src)
-                            image_urls.append(full_size_url)
-                            print(f"  ✓ Tìm thấy ảnh từ thumbnail: {full_size_url}")
-                        else:
-                            # Nếu không tìm thấy pattern, sử dụng URL gốc
-                            image_urls.append(src)
-                            print(f"  ✓ Tìm thấy ảnh từ thumbnail (không thể chuyển đổi kích thước): {src}")
-        
-        # PHƯƠNG PHÁP 4: Tìm trong thẻ meta og:image (phương án dự phòng)
-        if not image_urls:
-            og_image = soup.find('meta', property='og:image')
-            if og_image:
-                img_url = og_image.get('content', '')
-                if img_url and img_url.strip() and 'LOGO-BAA' not in img_url:
-                    # Trích xuất ID series/model và kích thước từ URL
-                    pattern = r'/(series|model)/(\d+)/(\d+)/'
-                    match = re.search(pattern, img_url)
-                    if match:
-                        type_folder = match.group(1)  # series hoặc model
-                        folder_id = match.group(2)    # ID thư mục (ví dụ: 274)
-                        # Tạo URL mới với kích thước 800
-                        full_size_url = re.sub(pattern, f'/{type_folder}/{folder_id}/800/', img_url)
-                        image_urls.append(full_size_url)
-                        print(f"  ✓ Tìm thấy ảnh từ og:image: {full_size_url}")
-                    else:
-                        # Nếu không tìm thấy pattern, sử dụng URL gốc
-                        image_urls.append(img_url)
-                        print(f"  ✓ Tìm thấy ảnh từ og:image (không thể chuyển đổi kích thước): {img_url}")
+        # Tìm mã sản phẩm
+        product_code_element = soup.select_one('.product__symbol__value')
+        if product_code_element:
+            product_code = product_code_element.text.strip()
+            print(f"Mã sản phẩm: {product_code}")
         
         return {
             'image_urls': image_urls,
             'product_code': product_code
         }
-    
+        
     except Exception as e:
         print(f"Lỗi khi trích xuất URL ảnh: {str(e)}")
         return {'image_urls': [], 'product_code': None}
+
+def clean_price(price_str):
+    """
+    Làm sạch giá sản phẩm: 
+    - Giữ lại số 
+    - Giữ lại đơn vị tiền tệ (đ, ₫, VND)
+    - Loại bỏ các ký tự không cần thiết khác
+    
+    Args:
+        price_str (str): Chuỗi giá ban đầu
+    
+    Returns:
+        str: Chuỗi giá đã làm sạch
+    """
+    if not price_str:
+        return ""
+    
+    # Giữ nguyên chuỗi nếu có đơn vị tiền tệ
+    if "₫" in price_str or "đ" in price_str or "VND" in price_str:
+        return price_str.strip()
+    
+    # Thử chuyển về số
+    try:
+        # Loại bỏ tất cả ký tự không phải số
+        price_digits = re.sub(r'[^\d]', '', price_str)
+        if price_digits:
+            # Định dạng lại số với dấu phân cách hàng nghìn
+            price_val = int(price_digits)
+            return f"{price_val:,}₫".replace(",", ".")
+        return price_str.strip()
+    except:
+        return price_str.strip()
+
+def extract_product_price(url, index=1):
+    """
+    Chỉ trích xuất mã sản phẩm và giá từ URL
+    
+    Args:
+        url (str): URL của trang sản phẩm
+        index (int): STT của sản phẩm trong danh sách
+        
+    Returns:
+        dict: Thông tin mã và giá sản phẩm
+    """
+    print(f"Đang trích xuất giá từ {url}")
+    
+    # Số lần thử tối đa
+    max_retries = 3
+    current_retry = 0
+    
+    while current_retry < max_retries:
+        try:
+            # Tải nội dung trang không giới hạn timeout
+            response = requests.get(url, headers=HEADERS)
+            response.raise_for_status()
+            html_content = response.text
+            
+            # Parse HTML
+            soup = BeautifulSoup(html_content, 'html.parser')
+            
+            # Khởi tạo kết quả
+            product_info = {
+                'STT': index,
+                'URL': url,
+                'Mã sản phẩm': "",
+                'Giá': ""
+            }
+            
+            # Trích xuất mã sản phẩm
+            product_code = ""
+            code_element = soup.select_one('.product__symbol__value')
+            if code_element:
+                product_code = code_element.text.strip()
+            
+            # Nếu không tìm thấy bằng phương pháp thông thường, thử các phương pháp khác
+            if not product_code:
+                # Thử các CSS selector khác
+                code_selectors = [
+                    '.product-sku',
+                    '.sku',
+                    '[itemprop="sku"]',
+                    '.product-id'
+                ]
+                
+                for selector in code_selectors:
+                    code_element = soup.select_one(selector)
+                    if code_element:
+                        product_code = code_element.text.strip()
+                        break
+                
+                # Nếu vẫn không tìm thấy, trích xuất từ URL hoặc tên sản phẩm
+                if not product_code:
+                    # Trích xuất từ URL
+                    url_path = urlparse(url).path
+                    path_parts = url_path.split("/")
+                    if path_parts:
+                        last_part = path_parts[-1]
+                        # Loại bỏ các số ID, giữ lại phần mã sản phẩm
+                        product_code = re.sub(r'_\d+$', '', last_part)
+                    
+                    # Trích xuất từ tên sản phẩm
+                    if not product_code:
+                        product_name = ""
+                        name_element = soup.select_one('.product__name, h1.product-title')
+                        if name_element:
+                            product_name = name_element.text.strip()
+                            code_match = re.search(r'([A-Z]{2,3}-[A-Z0-9]{3,5}(?:-[A-Z0-9]{4,5})+)', product_name)
+                            if code_match:
+                                product_code = code_match.group(1)
+            
+            if product_code:
+                print(f"Mã sản phẩm: {product_code}")
+                product_info['Mã sản phẩm'] = product_code
+            
+            # ------ PHẦN XỬ LÝ GIÁ SẢN PHẨM ------
+            # 1. ƯU TIÊN SỐ 1: Trích xuất từ phần tử span.product__price-print có thuộc tính data-root
+            price_element_with_data = soup.select_one('span.product__price-print[data-root]')
+            if price_element_with_data and 'data-root' in price_element_with_data.attrs:
+                data_root = price_element_with_data.get('data-root')
+                if data_root:
+                    try:
+                        price_value = int(data_root)
+                        formatted_price = f"{price_value:,}".replace(",", ".")
+                        
+                        # Tìm đơn vị tiền tệ
+                        price_unit = ""
+                        
+                        # Tìm trong cùng cell hoặc gần kề
+                        parent_td = price_element_with_data.find_parent('td')
+                        if parent_td:
+                            unit_element = parent_td.select_one('span.product__price-unit')
+                            if unit_element:
+                                price_unit = unit_element.text.strip()
+                        
+                        # Nếu không tìm thấy, tìm element kế tiếp
+                        if not price_unit:
+                            next_element = price_element_with_data.find_next_sibling()
+                            if next_element and 'product__price-unit' in next_element.get('class', []):
+                                price_unit = next_element.text.strip()
+                        
+                        # Nếu vẫn không tìm thấy
+                        if not price_unit:
+                            unit_element = soup.select_one('span.product__price-unit')
+                            if unit_element:
+                                price_unit = unit_element.text.strip()
+                            else:
+                                price_unit = "₫"  # Mặc định
+                        
+                        # Định dạng giá cuối cùng
+                        product_info['Giá'] = formatted_price + price_unit
+                        print(f"Giá từ data-root: {product_info['Giá']}")
+                    except ValueError as e:
+                        print(f"Lỗi khi xử lý giá từ data-root: {str(e)}")
+            
+            # 2. NẾU KHÔNG TÌM THẤY: Tìm giá từ các vị trí thông thường
+            if not product_info['Giá']:
+                price_selectors = [
+                    'div.product__card--price span.fw-bold.text-danger.text-start',
+                    '.product__card--price span',
+                    '.product__card--price .fw-bold',
+                    '.product-price',
+                    '.product__price-print',
+                    '.price-box .price',
+                    '.special-price .price',
+                    '[data-price-type="finalPrice"] .price'
+                ]
+                
+                for selector in price_selectors:
+                    price_element = soup.select_one(selector)
+                    if price_element:
+                        product_price = price_element.text.strip()
+                        
+                        # Tìm đơn vị tiền tệ
+                        price_unit = ""
+                        unit_element = soup.select_one('span.product__price-unit')
+                        if unit_element:
+                            price_unit = unit_element.text.strip()
+                        
+                        # Định dạng giá
+                        if price_unit and price_unit not in product_price:
+                            product_info['Giá'] = product_price + price_unit
+                        else:
+                            product_info['Giá'] = product_price
+                        
+                        print(f"Giá sản phẩm: {product_info['Giá']}")
+                        break
+            
+            # 3. KIỂM TRA LẠI: Nếu vẫn không tìm thấy, tìm bất kỳ phần tử nào có thuộc tính data-root
+            if not product_info['Giá']:
+                elements_with_data_root = soup.select('[data-root]')
+                if elements_with_data_root:
+                    for element in elements_with_data_root:
+                        data_root = element.get('data-root')
+                        if data_root:
+                            try:
+                                price_value = int(data_root)
+                                product_info['Giá'] = f"{price_value:,}₫".replace(",", ".")
+                                print(f"Giá từ data-root (phương pháp 3): {product_info['Giá']}")
+                                break
+                            except ValueError:
+                                continue
+            
+            # Làm sạch giá trước khi trả về
+            if product_info['Giá']:
+                product_info['Giá'] = clean_price(product_info['Giá'])
+            
+            return product_info
+            
+        except requests.exceptions.RequestException as e:
+            current_retry += 1
+            print(f"Lỗi tải trang (lần thử {current_retry}): {str(e)}")
+            if current_retry < max_retries:
+                print(f"Thử lại trong 3 giây...")
+                time.sleep(3)
+            else:
+                print(f"Đã thử {max_retries} lần, bỏ qua URL {url}")
+    
+    # Trả về dữ liệu tối thiểu nếu không thể tải trang
+    return {
+        'STT': index,
+        'URL': url,
+        'Mã sản phẩm': "",
+        'Giá': ""
+    }

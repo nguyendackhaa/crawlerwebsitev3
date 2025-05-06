@@ -195,6 +195,26 @@
                     <i class="bi bi-funnel"></i> Lọc mã sản phẩm
                 </button>
             </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="extract-prices-tab" data-bs-toggle="tab" data-bs-target="#extract-prices" type="button" role="tab" aria-controls="extract-prices" aria-selected="false">
+                    <i class="bi bi-currency-exchange"></i> Trích xuất giá sản phẩm
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="extract-only-prices-tab" data-bs-toggle="tab" data-bs-target="#extract-only-prices" type="button" role="tab" aria-controls="extract-only-prices" aria-selected="false">
+                    <i class="bi bi-cash-coin"></i> Chỉ lấy giá sản phẩm
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="category-extract-tab" data-bs-toggle="tab" data-bs-target="#category-extract" type="button" role="tab" aria-controls="category-extract" aria-selected="false">
+                    <i class="bi bi-folder-plus"></i> Cào nhiều danh mục (Liên kết)
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="category-scrape-tab" data-bs-toggle="tab" data-bs-target="#category-scrape" type="button" role="tab" aria-controls="category-scrape" aria-selected="false">
+                    <i class="bi bi-folder-symlink"></i> Cào nhiều danh mục (Dữ liệu)
+                </button>
+            </li>
         </ul>
 
         <div class="tab-content" id="myTabContent">
@@ -615,6 +635,182 @@
                     </form>
                 </div>
             </div>
+            
+            <!-- Tab trích xuất giá sản phẩm -->
+            <div class="tab-pane fade" id="extract-prices" role="tabpanel" aria-labelledby="extract-prices-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Trích xuất giá sản phẩm từ danh sách URL</h4>
+                    
+                    <div class="data-format">
+                        <h5>Thông tin về chức năng</h5>
+                        <p>Chức năng này cho phép trích xuất giá sản phẩm từ danh sách URL:</p>
+                        <ol>
+                            <li>Tải lên file TXT chứa danh sách các URL sản phẩm (mỗi URL trên một dòng)</li>
+                            <li>Hệ thống sẽ truy cập từng URL và trích xuất: Mã sản phẩm, Tên sản phẩm và Giá</li>
+                            <li>Tất cả thông tin được xuất ra file Excel để dễ dàng sử dụng</li>
+                        </ol>
+                    </div>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <p>Tạo một file <strong>TXT</strong> chứa danh sách các URL sản phẩm (mỗi URL trên một dòng)</p>
+                        </div>
+                        <div class="step">
+                            <p>Tải file TXT lên hệ thống</p>
+                        </div>
+                        <div class="step">
+                            <p>Nhấn nút "Trích xuất giá" để bắt đầu quá trình</p>
+                        </div>
+                    </div>
+
+                    <form action="{{ url_for('main.extract_prices') }}" method="post" enctype="multipart/form-data" id="extract-prices-form">
+                        <div class="mb-3">
+                            <label for="product_links_file" class="file-input-label">
+                                <i class="bi bi-file-earmark-text fs-3"></i>
+                                <div class="mt-2">File TXT chứa danh sách URL sản phẩm</div>
+                                <span>Chỉ chấp nhận file .txt</span>
+                                <input type="file" id="product_links_file" name="product_links_file" class="d-none" accept=".txt" required>
+                            </label>
+                            <div id="product_links_file_name" class="mb-3 text-muted"></div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-currency-exchange"></i> Trích xuất giá
+                        </button>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Tab chỉ lấy giá sản phẩm -->
+            <div class="tab-pane fade" id="extract-only-prices" role="tabpanel" aria-labelledby="extract-only-prices-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Chỉ lấy giá sản phẩm từ danh sách URL</h4>
+                    
+                    <div class="data-format">
+                        <h5>Thông tin về chức năng</h5>
+                        <p>Chức năng này chỉ trích xuất mã sản phẩm và giá từ danh sách URL (nhanh hơn chức năng trích xuất đầy đủ):</p>
+                        <ol>
+                            <li>Tải lên file TXT chứa danh sách các URL sản phẩm (mỗi URL trên một dòng)</li>
+                            <li>Hệ thống sẽ truy cập từng URL và chỉ trích xuất mã sản phẩm và giá</li>
+                            <li>Kết quả được xuất ra file Excel gọn nhẹ, thuận tiện cho việc tra cứu giá</li>
+                        </ol>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> Tính năng này được tối ưu hóa để lấy giá nhanh hơn, phù hợp với việc khảo sát giá.
+                        </div>
+                    </div>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <p>Tạo một file <strong>TXT</strong> chứa danh sách các URL sản phẩm (mỗi URL trên một dòng)</p>
+                        </div>
+                        <div class="step">
+                            <p>Tải file TXT lên hệ thống</p>
+                        </div>
+                        <div class="step">
+                            <p>Nhấn nút "Lấy giá sản phẩm" để bắt đầu quá trình</p>
+                        </div>
+                    </div>
+
+                    <form action="{{ url_for('main.extract_only_prices') }}" method="post" enctype="multipart/form-data" id="extract-only-prices-form">
+                        <div class="mb-3">
+                            <label for="product_links_file_prices" class="file-input-label">
+                                <i class="bi bi-file-earmark-text fs-3"></i>
+                                <div class="mt-2">File TXT chứa danh sách URL sản phẩm</div>
+                                <span>Chỉ chấp nhận file .txt</span>
+                                <input type="file" id="product_links_file_prices" name="product_links_file" class="d-none" accept=".txt" required>
+                            </label>
+                            <div id="product_links_file_prices_name" class="mb-3 text-muted"></div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-cash-coin"></i> Lấy giá sản phẩm
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Tab cào nhiều danh mục (Liên kết) -->
+            <div class="tab-pane fade" id="category-extract" role="tabpanel" aria-labelledby="category-extract-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Cào nhiều danh mục (Liên kết)</h4>
+                    
+                    <div class="data-format">
+                        <h5>Thông tin về chức năng</h5>
+                        <p>Chức năng này cho phép cào nhiều danh mục và thu thập liên kết sản phẩm từ các danh mục đó:</p>
+                        <ol>
+                            <li>Nhập danh sách các URL danh mục (mỗi URL trên một dòng)</li>
+                            <li>Hệ thống sẽ tự động cào thông tin sản phẩm từ các danh mục đó</li>
+                            <li>Lưu trữ các liên kết sản phẩm vào file Excel</li>
+                        </ol>
+                    </div>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <p>Nhập danh sách các URL danh mục (mỗi URL trên một dòng)</p>
+                        </div>
+                        <div class="step">
+                            <p>Nhấn nút "Cào nhiều danh mục" để bắt đầu quá trình</p>
+                        </div>
+                        <div class="step">
+                            <p>Tải xuống file Excel chứa các liên kết sản phẩm</p>
+                        </div>
+                    </div>
+
+                    <form action="{{ url_for('main.extract_category_links_separate') }}" method="post" enctype="multipart/form-data" id="category-extract-form">
+                        <div class="mb-3">
+                            <label for="category_urls" class="form-label">Danh sách các URL danh mục (mỗi URL trên một dòng):</label>
+                            <textarea id="category_urls" name="category_urls" class="form-control" rows="10" required placeholder="Nhập URL danh mục vào đây..."></textarea>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-folder-plus"></i> Cào nhiều danh mục
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Tab cào nhiều danh mục (Dữ liệu) -->
+            <div class="tab-pane fade" id="category-scrape" role="tabpanel" aria-labelledby="category-scrape-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Cào nhiều danh mục (Dữ liệu)</h4>
+                    
+                    <div class="data-format">
+                        <h5>Thông tin về chức năng</h5>
+                        <p>Chức năng này cho phép cào nhiều danh mục và thu thập đầy đủ thông tin sản phẩm (bao gồm tên, mã, giá và thông số kỹ thuật):</p>
+                        <ol>
+                            <li>Nhập danh sách các URL danh mục (mỗi URL trên một dòng)</li>
+                            <li>Hệ thống sẽ tự động cào tất cả thông tin sản phẩm từ các danh mục</li>
+                            <li>Kết quả được tổ chức theo từng danh mục và nén thành file ZIP</li>
+                        </ol>
+                        <div class="alert alert-info mt-3">
+                            <i class="bi bi-info-circle-fill me-2"></i> <strong>Lưu ý:</strong> Chức năng này sẽ mất nhiều thời gian hơn để thực hiện vì cần thu thập đầy đủ thông tin từ mỗi sản phẩm.
+                        </div>
+                    </div>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <p>Nhập danh sách các URL danh mục (mỗi URL trên một dòng)</p>
+                        </div>
+                        <div class="step">
+                            <p>Nhấn nút "Cào thông tin sản phẩm" để bắt đầu quá trình</p>
+                        </div>
+                        <div class="step">
+                            <p>Tải xuống file ZIP chứa đầy đủ thông tin sản phẩm đã được tổ chức theo danh mục</p>
+                        </div>
+                    </div>
+
+                    <form action="{{ url_for('main.scrape_category_products') }}" method="post" enctype="multipart/form-data" id="category-scrape-form">
+                        <div class="mb-3">
+                            <label for="category_urls_scrape" class="form-label">Danh sách các URL danh mục (mỗi URL trên một dòng):</label>
+                            <textarea id="category_urls_scrape" name="category_urls" class="form-control" rows="10" required placeholder="Nhập URL danh mục vào đây..."></textarea>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-folder-symlink"></i> Cào thông tin sản phẩm
+                        </button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -800,6 +996,58 @@
                     progressMessage.innerText = 'Đang tải file và so sánh mã sản phẩm...';
                 }
             });
+        });
+
+        document.getElementById('product_links_file').addEventListener('change', function(e) {
+            if (this.files.length > 0) {
+                document.getElementById('product_links_file_name').textContent = 'File đã chọn: ' + this.files[0].name;
+            }
+        });
+        
+        document.getElementById('extract-prices-form').addEventListener('submit', function(e) {
+            const fileInput = document.getElementById('product_links_file');
+            if (fileInput.files.length > 0) {
+                const progressContainer = document.getElementById('progress-container');
+                progressContainer.style.display = 'block';
+                const progressMessage = document.getElementById('progress-message');
+                progressMessage.innerText = 'Đang tải file và trích xuất giá sản phẩm...';
+            }
+        });
+
+        document.getElementById('product_links_file_prices').addEventListener('change', function(e) {
+            if (this.files.length > 0) {
+                document.getElementById('product_links_file_prices_name').textContent = 'File đã chọn: ' + this.files[0].name;
+            }
+        });
+        
+        document.getElementById('extract-only-prices-form').addEventListener('submit', function(e) {
+            const fileInput = document.getElementById('product_links_file_prices');
+            if (fileInput.files.length > 0) {
+                const progressContainer = document.getElementById('progress-container');
+                progressContainer.style.display = 'block';
+                const progressMessage = document.getElementById('progress-message');
+                progressMessage.innerText = 'Đang tải file và lấy giá sản phẩm...';
+            }
+        });
+
+        document.getElementById('category-extract-form').addEventListener('submit', function(e) {
+            const fileInput = document.getElementById('category_urls');
+            if (fileInput.value.trim() !== '') {
+                const progressContainer = document.getElementById('progress-container');
+                progressContainer.style.display = 'block';
+                const progressMessage = document.getElementById('progress-message');
+                progressMessage.innerText = 'Đang cào thông tin sản phẩm từ các danh mục...';
+            }
+        });
+
+        document.getElementById('category-scrape-form').addEventListener('submit', function(e) {
+            const fileInput = document.getElementById('category_urls_scrape');
+            if (fileInput.value.trim() !== '') {
+                const progressContainer = document.getElementById('progress-container');
+                progressContainer.style.display = 'block';
+                const progressMessage = document.getElementById('progress-message');
+                progressMessage.innerText = 'Đang cào thông tin sản phẩm từ các danh mục...';
+            }
         });
     </script>
 </body>

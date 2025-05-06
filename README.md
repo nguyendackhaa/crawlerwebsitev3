@@ -1,78 +1,62 @@
-# CrawlBot - Công cụ thu thập dữ liệu sản phẩm
+# Crawler Website v2
 
-CrawlBot là ứng dụng web giúp thu thập thông tin sản phẩm từ các website thương mại điện tử.
+Đây là ứng dụng web crawler được phát triển bằng Flask, cho phép trích xuất thông tin sản phẩm, hình ảnh và tài liệu từ các trang web thương mại điện tử.
 
-## Tính năng
+## Tính năng chính
 
-1. **Thu thập liên kết sản phẩm từ trang danh mục**
+- Trích xuất liên kết sản phẩm từ trang danh mục
+- Trích xuất thông tin sản phẩm chi tiết
+- Tải xuống hình ảnh sản phẩm
+- Tải xuống tài liệu sản phẩm
+- So sánh mã sản phẩm giữa các file
+- Lọc sản phẩm theo tiêu chí
+- Trích xuất giá sản phẩm
+- Tương tác thời gian thực với SocketIO
 
-   - Nhập file txt chứa danh sách URL của các trang danh mục
-   - Ứng dụng sẽ duyệt qua từng trang và thu thập tất cả liên kết sản phẩm
-   - Kết quả được xuất ra file txt chứa tất cả liên kết sản phẩm
+## Yêu cầu hệ thống
 
-2. **Thu thập thông tin sản phẩm từ liên kết**
-   - Nhập file txt chứa danh sách URL của các sản phẩm
-   - Nhập file Excel mẫu xác định các thông tin cần thu thập
-   - Ứng dụng sẽ thu thập thông tin từ trang chi tiết của mỗi sản phẩm
-   - Kết quả được xuất ra file Excel
+- Python 3.x
+- IIS (để triển khai trên Windows Server)
+- Các thư viện Python được liệt kê trong `app/requirements.txt`
 
-## Cài đặt
+## Cài đặt và triển khai
 
-1. Đảm bảo máy tính đã cài đặt Python 3.7 trở lên
-2. Clone repository về máy:
+Xem chi tiết hướng dẫn cài đặt trong tệp [INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md).
 
-```
-git clone https://github.com/username/CrawlBot.git
-cd CrawlBot
-```
-
-3. Cài đặt các thư viện cần thiết:
+## Cấu trúc dự án
 
 ```
-pip install -r requirements.txt
+CrawlerWebsitev2/
+│
+├── app/
+│   ├── __init__.py           # Khởi tạo ứng dụng Flask
+│   ├── crawler.py            # Logic crawler chính
+│   ├── product_comparison.py # So sánh sản phẩm
+│   ├── routes.py             # Định nghĩa các route
+│   ├── templates/            # Templates HTML
+│   │   ├── base.html         # Template cơ sở
+│   │   ├── index.html        # Trang chính
+│   │   ├── view_images.html  # Xem hình ảnh
+│   │   └── view_baa_images.html # Xem hình ảnh BAA
+│   ├── utils.py              # Các hàm tiện ích
+│   └── requirements.txt      # Các phụ thuộc
+│
+├── logs/                     # Thư mục chứa log
+├── venv/                     # Môi trường ảo Python
+├── README.md                 # Tài liệu tổng quan
+├── INSTALLATION_GUIDE.md     # Hướng dẫn cài đặt chi tiết
+├── run.py                    # Điểm khởi chạy ứng dụng
+└── web.config                # Cấu hình IIS
 ```
 
-## Cách sử dụng
-
-1. Khởi động ứng dụng:
+## Chạy ứng dụng trong môi trường phát triển
 
 ```
-cd CrawlerWebsitev2; python -m flask run
+python run.py
 ```
 
-2. Mở trình duyệt và truy cập: `http://localhost:5000`
+Ứng dụng sẽ chạy tại địa chỉ: http://127.0.0.1:5000
 
-3. Sử dụng các chức năng:
-   - **Chức năng 1**: Thu thập liên kết sản phẩm từ trang danh mục
-   - **Chức năng 2**: Thu thập thông tin sản phẩm từ liên kết
+## Giấy phép
 
-## Chuẩn bị file đầu vào
-
-1. **File danh sách URL danh mục** (txt):
-
-   - Mỗi URL trên một dòng, ví dụ:
-
-   ```
-   https://baa.vn/vn/Category/cam-bien-quang-dien-autonics_47_378/
-   https://baa.vn/vn/Category/cam-bien-anh-sang_47_389/
-   ```
-
-2. **File danh sách URL sản phẩm** (txt):
-
-   - Mỗi URL trên một dòng, ví dụ:
-
-   ```
-   https://baa.vn/vn/product/cam-bien-quang-autonics-bx5m-mfr_1325639/
-   https://baa.vn/vn/product/cam-bien-quang-autonics-bup-30_1325634/
-   ```
-
-3. **File Excel mẫu**:
-   - File Excel với các cột tương ứng với thông tin cần thu thập
-   - Ví dụ: `Mã sản phẩm`, `Tên sản phẩm`, `Giá`, `Khoảng cách phát hiện`, `Nguồn cấp`, v.v.
-
-## Lưu ý
-
-- Tốc độ thu thập phụ thuộc vào số lượng sản phẩm và tốc độ mạng
-- Nên sử dụng VPN hoặc proxy nếu thu thập một lượng lớn dữ liệu để tránh bị chặn
-- Một số website có biện pháp chống thu thập dữ liệu tự động, hiệu quả có thể bị hạn chế
-- LH : 0355108736 để biết thêm chi tiết
+© 2023-2024. Mọi quyền được bảo lưu.

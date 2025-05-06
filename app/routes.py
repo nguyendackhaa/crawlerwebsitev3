@@ -3,7 +3,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from werkzeug.utils import secure_filename
 import tempfile
 import traceback
-from app.crawler import extract_category_links, scrape_product_info, is_product_url, get_product_info, download_autonics_images, download_autonics_jpg_images, download_product_documents, extract_product_urls, is_category_url, download_baa_product_images, download_baa_product_images_fixed
+from app.crawler import extract_category_links, scrape_product_info, is_product_url, get_product_info, download_autonics_images, download_autonics_jpg_images, download_product_documents, extract_product_urls, is_category_url, download_baa_product_images, download_baa_product_images_fixed, extract_product_price
 import pandas as pd
 from openpyxl.utils import get_column_letter
 from datetime import datetime
@@ -13,6 +13,8 @@ import time
 import openpyxl
 import re
 import zipfile
+import shutil
+from urllib.parse import urlparse
 
 main_bp = Blueprint('main', __name__)
 
@@ -1369,4 +1371,800 @@ def filter_products():
         print(f"Lỗi khi lọc sản phẩm: {error_message}")
         traceback.print_exc()
         flash(f'Lỗi: {error_message}', 'error')
+        return redirect(url_for('main.index'))
+
+@main_bp.route('/extract-prices', methods=['POST'])
+def extract_prices():
+    """
+    Trích xuất giá sản phẩm từ danh sách các URL sản phẩm
+    """
+    try:
+        if 'product_links_file' not in request.files:
+            flash('Không tìm thấy file!', 'error')
+            return redirect(url_for('main.index'))
+        
+        file = request.files['product_links_file']
+        
+        if file.filename == '':
+            flash('Không có file nào được chọn!', 'error')
+            return redirect(url_for('main.index'))
+            
+        if not allowed_file(file.filename, ALLOWED_EXTENSIONS_TXT):
+            flash('Chỉ cho phép file .txt!', 'error')
+            return redirect(url_for('main.index'))
+        
+        # Đọc nội dung file
+        content = file.read().decode('utf-8')
+        
+        # Lấy danh sách URL sản phẩm
+        product_urls = [url.strip() for url in content.strip().split('\n') if url.strip()]
+        
+        if not product_urls:
+            flash('File không chứa URL sản phẩm nào!', 'error')
+            return redirect(url_for('main.index'))
+            
+        # Gửi thông báo bắt đầu
+        socketio.emit('progress_update', {
+            'percent': 0, 
+            'message': f'Bắt đầu trích xuất giá cho {len(product_urls)} URL sản phẩm...'
+        })
+        
+        # Trích xuất thông tin sản phẩm, bao gồm giá
+        product_data = []
+        required_fields = ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Giá', 'URL']
+        
+        for index, url in enumerate(product_urls, 1):
+            socketio.emit('progress_update', {
+                'percent': int((index / len(product_urls)) * 70), 
+                'message': f'Đang trích xuất giá từ URL {index}/{len(product_urls)}...'
+            })
+            
+            try:
+                product_info = extract_product_info(url, required_fields=required_fields, index=index)
+                product_data.append(product_info)
+            except Exception as e:
+                print(f"Lỗi khi trích xuất URL {url}: {str(e)}")
+                # Thêm dữ liệu tối thiểu nếu có lỗi
+                product_data.append({
+                    'STT': index,
+                    'Mã sản phẩm': '',
+                    'Tên sản phẩm': '',
+                    'Giá': 'Lỗi: ' + str(e),
+                    'URL': url
+                })
+        
+        # Tạo DataFrame từ dữ liệu đã thu thập
+        df = pd.DataFrame(product_data)
+        
+        # Tạo tên file output
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        output_filename = f"product_prices_{timestamp}.xlsx"
+        output_path = os.path.join(current_app.config['UPLOAD_FOLDER'], output_filename)
+        
+        # Lưu kết quả vào file Excel
+        socketio.emit('progress_update', {
+            'percent': 80, 
+            'message': 'Đang tạo file Excel...'
+        })
+        
+        with pd.ExcelWriter(output_path, engine='xlsxwriter') as writer:
+            df.to_excel(writer, sheet_name='Giá sản phẩm', index=False)
+            
+            # Format sheet
+            workbook = writer.book
+            worksheet = writer.sheets['Giá sản phẩm']
+            
+            # Định dạng cột
+            worksheet.set_column('A:A', 5)   # STT
+            worksheet.set_column('B:B', 20)  # Mã sản phẩm
+            worksheet.set_column('C:C', 40)  # Tên sản phẩm
+            worksheet.set_column('D:D', 20)  # Giá
+            worksheet.set_column('E:E', 50)  # URL
+            
+            # Tạo định dạng
+            header_format = workbook.add_format({
+                'bold': True,
+                'text_wrap': True,
+                'valign': 'top',
+                'align': 'center',
+                'border': 1,
+                'bg_color': '#D7E4BC'
+            })
+            
+            # Áp dụng định dạng cho tiêu đề
+            for col_num, value in enumerate(df.columns.values):
+                worksheet.write(0, col_num, value, header_format)
+        
+        socketio.emit('progress_update', {
+            'percent': 100, 
+            'message': 'Hoàn thành trích xuất giá sản phẩm!'
+        })
+        
+        # Tạo URL để tải xuống file kết quả
+        download_url = url_for('main.download_file', filename=output_filename)
+        
+        # Thông báo kết quả
+        success_message = f"Đã trích xuất giá cho {len(product_data)} sản phẩm thành công!"
+        return render_template('index.html', download_url=download_url, success_message=success_message)
+        
+    except Exception as e:
+        error_message = str(e)
+        print(f"Lỗi khi trích xuất giá sản phẩm: {error_message}")
+        traceback.print_exc()
+        flash(f'Lỗi: {error_message}', 'error')
         return redirect(url_for('main.index')) 
+
+@main_bp.route('/extract-only-prices', methods=['POST'])
+def extract_only_prices():
+    """
+    Chỉ trích xuất giá sản phẩm từ danh sách các URL sản phẩm
+    """
+    try:
+        if 'product_links_file' not in request.files:
+            flash('Không tìm thấy file!', 'error')
+            return redirect(url_for('main.index'))
+        
+        file = request.files['product_links_file']
+        
+        if file.filename == '':
+            flash('Không có file nào được chọn!', 'error')
+            return redirect(url_for('main.index'))
+            
+        if not allowed_file(file.filename, ALLOWED_EXTENSIONS_TXT):
+            flash('Chỉ cho phép file .txt!', 'error')
+            return redirect(url_for('main.index'))
+        
+        # Đọc nội dung file
+        content = file.read().decode('utf-8')
+        
+        # Lấy danh sách URL sản phẩm
+        product_urls = [url.strip() for url in content.strip().split('\n') if url.strip()]
+        
+        if not product_urls:
+            flash('File không chứa URL sản phẩm nào!', 'error')
+            return redirect(url_for('main.index'))
+            
+        # Gửi thông báo bắt đầu
+        socketio.emit('progress_update', {
+            'percent': 0, 
+            'message': f'Bắt đầu trích xuất giá cho {len(product_urls)} URL sản phẩm...'
+        })
+        
+        # Chỉ trích xuất giá và mã sản phẩm
+        product_data = []
+        
+        for index, url in enumerate(product_urls, 1):
+            socketio.emit('progress_update', {
+                'percent': int((index / len(product_urls)) * 70), 
+                'message': f'Đang trích xuất giá từ URL {index}/{len(product_urls)}...'
+            })
+            
+            try:
+                # Sử dụng hàm chuyên biệt để chỉ lấy mã và giá
+                product_info = extract_product_price(url, index=index)
+                product_data.append(product_info)
+            except Exception as e:
+                print(f"Lỗi khi trích xuất URL {url}: {str(e)}")
+                # Thêm dữ liệu tối thiểu nếu có lỗi
+                product_data.append({
+                    'STT': index,
+                    'URL': url,
+                    'Mã sản phẩm': '',
+                    'Giá': 'Lỗi: ' + str(e)
+                })
+        
+        # Tạo DataFrame từ dữ liệu đã thu thập
+        df = pd.DataFrame(product_data)
+        
+        # Tạo tên file output
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        output_filename = f"product_only_prices_{timestamp}.xlsx"
+        output_path = os.path.join(current_app.config['UPLOAD_FOLDER'], output_filename)
+        
+        # Lưu kết quả vào file Excel
+        socketio.emit('progress_update', {
+            'percent': 80, 
+            'message': 'Đang tạo file Excel...'
+        })
+        
+        with pd.ExcelWriter(output_path, engine='xlsxwriter') as writer:
+            df.to_excel(writer, sheet_name='Giá sản phẩm', index=False)
+            
+            # Format sheet
+            workbook = writer.book
+            worksheet = writer.sheets['Giá sản phẩm']
+            
+            # Định dạng cột
+            worksheet.set_column('A:A', 5)   # STT
+            worksheet.set_column('B:B', 50)  # URL
+            worksheet.set_column('C:C', 20)  # Mã sản phẩm
+            worksheet.set_column('D:D', 20)  # Giá
+            
+            # Tạo định dạng
+            header_format = workbook.add_format({
+                'bold': True,
+                'text_wrap': True,
+                'valign': 'top',
+                'align': 'center',
+                'border': 1,
+                'bg_color': '#D7E4BC'
+            })
+            
+            # Áp dụng định dạng cho tiêu đề
+            for col_num, value in enumerate(df.columns.values):
+                worksheet.write(0, col_num, value, header_format)
+        
+        socketio.emit('progress_update', {
+            'percent': 100, 
+            'message': 'Hoàn thành trích xuất giá sản phẩm!'
+        })
+        
+        # Tạo URL để tải xuống file kết quả
+        download_url = url_for('main.download_file', filename=output_filename)
+        
+        # Thông báo kết quả
+        success_message = f"Đã trích xuất giá cho {len(product_data)} sản phẩm thành công!"
+        return render_template('index.html', download_url=download_url, success_message=success_message)
+        
+    except Exception as e:
+        error_message = str(e)
+        print(f"Lỗi khi trích xuất giá sản phẩm: {error_message}")
+        traceback.print_exc()
+        flash(f'Lỗi: {error_message}', 'error')
+        return redirect(url_for('main.index'))
+
+@main_bp.route('/extract-category-links', methods=['POST'])
+def extract_category_links_separate():
+    """
+    Trích xuất liên kết sản phẩm từ nhiều danh mục và sắp xếp thành thư mục riêng
+    """
+    try:
+        # Kiểm tra xem có dữ liệu danh mục không
+        if 'category_urls' not in request.form:
+            flash('Vui lòng nhập danh sách URL danh mục!', 'error')
+            return redirect(url_for('main.index'))
+            
+        # Lấy danh sách URL danh mục từ form
+        category_urls_text = request.form['category_urls']
+        if not category_urls_text.strip():
+            flash('Danh sách URL danh mục không được để trống!', 'error')
+            return redirect(url_for('main.index'))
+        
+        # Tách thành danh sách URL, bỏ qua dòng trống
+        raw_urls = category_urls_text.strip().split('\n')
+        urls = [url.strip() for url in raw_urls if url.strip()]
+        
+        # Lọc các URL hợp lệ
+        valid_urls = []
+        invalid_urls = []
+        
+        # Gửi thông báo bắt đầu
+        socketio.emit('progress_update', {'percent': 0, 'message': 'Đang kiểm tra URL danh mục...'})
+        
+        # Kiểm tra các URL
+        for url in urls:
+            if utils.is_valid_url(url) and is_category_url(url):
+                valid_urls.append(url)
+            else:
+                invalid_urls.append(url)
+        
+        if not valid_urls:
+            flash('Không có URL danh mục hợp lệ!', 'error')
+            return redirect(url_for('main.index'))
+            
+        # Gửi thông báo cập nhật
+        socketio.emit('progress_update', {'percent': 5, 'message': f'Đã tìm thấy {len(valid_urls)} URL danh mục hợp lệ'})
+        
+        # Tạo thư mục chính để lưu kết quả
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        result_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], f'category_products_{timestamp}')
+        os.makedirs(result_dir, exist_ok=True)
+        
+        # Tạo tệp txt để lưu tất cả các liên kết
+        all_products_file = os.path.join(result_dir, 'all_product_links.txt')
+        all_product_links = []
+        
+        # Xử lý từng URL danh mục riêng biệt
+        category_info = []  # Lưu thông tin về mỗi danh mục
+        
+        for i, category_url in enumerate(valid_urls):
+            try:
+                progress = 5 + int((i / len(valid_urls)) * 85)
+                socketio.emit('progress_update', {
+                    'percent': progress, 
+                    'message': f'Đang xử lý danh mục {i+1}/{len(valid_urls)}: {category_url}'
+                })
+                
+                # Trích xuất tên danh mục từ URL
+                parsed_url = urlparse(category_url)
+                url_path = parsed_url.path
+                
+                # Lấy phần cuối của URL làm tên danh mục
+                category_name = url_path.strip('/').split('/')[-1]
+                # Loại bỏ phần ID số từ tên danh mục nếu có
+                category_name = re.sub(r'_\d+$', '', category_name)
+                
+                # Tạo thư mục cho danh mục này
+                category_dir = os.path.join(result_dir, category_name)
+                os.makedirs(category_dir, exist_ok=True)
+                
+                # Thu thập liên kết sản phẩm từ danh mục này
+                category_products = extract_category_links([category_url])
+                
+                if category_products:
+                    # Lưu các liên kết sản phẩm vào file txt riêng của danh mục
+                    category_file = os.path.join(category_dir, f'{category_name}_links.txt')
+                    with open(category_file, 'w', encoding='utf-8') as f:
+                        for link in category_products:
+                            f.write(link + '\n')
+                            
+                    # Thêm vào danh sách tất cả sản phẩm
+                    all_product_links.extend(category_products)
+                    
+                    # Thêm thông tin danh mục vào danh sách
+                    category_info.append({
+                        'Tên danh mục': category_name,
+                        'URL danh mục': category_url,
+                        'Số sản phẩm': len(category_products)
+                    })
+                else:
+                    print(f"Không tìm thấy sản phẩm nào trong danh mục: {category_url}")
+                    
+            except Exception as e:
+                error_message = str(e)
+                print(f"Lỗi khi xử lý danh mục {category_url}: {error_message}")
+                traceback.print_exc()
+        
+        # Lưu tất cả liên kết vào file chung
+        with open(all_products_file, 'w', encoding='utf-8') as f:
+            for link in all_product_links:
+                f.write(link + '\n')
+        
+        # Tạo file Excel báo cáo về các danh mục
+        report_file = os.path.join(result_dir, 'category_report.xlsx')
+        df = pd.DataFrame(category_info)
+        
+        if not df.empty:
+            df.to_excel(report_file, index=False)
+        
+        # Nén thư mục kết quả thành file ZIP
+        zip_filename = f'category_products_{timestamp}.zip'
+        zip_path = os.path.join(current_app.config['UPLOAD_FOLDER'], zip_filename)
+        
+        # Tạo file ZIP từ thư mục
+        if utils.create_zip_from_folder(result_dir, zip_path):
+            # Gửi thông báo hoàn thành
+            socketio.emit('progress_update', {
+                'percent': 100, 
+                'message': f'Đã hoàn thành thu thập {len(all_product_links)} liên kết sản phẩm từ {len(valid_urls)} danh mục!'
+            })
+            
+            # Tạo URL để tải xuống file zip
+            download_url = url_for('main.download_file', filename=zip_filename)
+            
+            # Thông báo thành công
+            success_message = f"Đã thu thập thành công {len(all_product_links)} liên kết sản phẩm từ {len(valid_urls)} danh mục."
+            
+            return render_template('index.html', download_url=download_url, success_message=success_message)
+        else:
+            flash('Lỗi khi tạo file ZIP!', 'error')
+            return redirect(url_for('main.index'))
+            
+    except Exception as e:
+        error_message = str(e)
+        # In chi tiết lỗi
+        traceback.print_exc()
+        flash(f'Lỗi: {error_message}', 'error')
+        return redirect(url_for('main.index'))
+
+@main_bp.route('/scrape-category-products', methods=['POST'])
+def scrape_category_products():
+    """
+    Thu thập thông tin sản phẩm từ nhiều danh mục và sắp xếp thành thư mục riêng
+    """
+    try:
+        # Kiểm tra xem có dữ liệu danh mục không
+        if 'category_urls' not in request.form:
+            flash('Vui lòng nhập danh sách URL danh mục!', 'error')
+            return redirect(url_for('main.index'))
+            
+        # Lấy danh sách URL danh mục từ form
+        category_urls_text = request.form['category_urls']
+        if not category_urls_text.strip():
+            flash('Danh sách URL danh mục không được để trống!', 'error')
+            return redirect(url_for('main.index'))
+        
+        # Tách thành danh sách URL, bỏ qua dòng trống
+        raw_urls = category_urls_text.strip().split('\n')
+        urls = [url.strip() for url in raw_urls if url.strip()]
+        
+        # Lọc các URL hợp lệ
+        valid_urls = []
+        invalid_urls = []
+        
+        # Gửi thông báo bắt đầu
+        socketio.emit('progress_update', {'percent': 0, 'message': 'Đang kiểm tra URL danh mục...'})
+        
+        # Kiểm tra các URL
+        for url in urls:
+            if utils.is_valid_url(url) and is_category_url(url):
+                valid_urls.append(url)
+            else:
+                invalid_urls.append(url)
+        
+        if not valid_urls:
+            flash('Không có URL danh mục hợp lệ!', 'error')
+            return redirect(url_for('main.index'))
+            
+        # Gửi thông báo cập nhật
+        socketio.emit('progress_update', {'percent': 5, 'message': f'Đã tìm thấy {len(valid_urls)} URL danh mục hợp lệ'})
+        
+        # Tạo thư mục chính để lưu kết quả
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        result_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], f'category_info_{timestamp}')
+        os.makedirs(result_dir, exist_ok=True)
+        
+        # Xử lý từng URL danh mục riêng biệt
+        category_info = []  # Lưu thông tin về mỗi danh mục
+        
+        for i, category_url in enumerate(valid_urls):
+            try:
+                category_progress_base = 5 + int((i / len(valid_urls)) * 85)
+                socketio.emit('progress_update', {
+                    'percent': category_progress_base, 
+                    'message': f'Đang xử lý danh mục {i+1}/{len(valid_urls)}: {category_url}'
+                })
+                
+                # Trích xuất tên danh mục từ URL
+                parsed_url = urlparse(category_url)
+                url_path = parsed_url.path
+                
+                # Lấy phần cuối của URL làm tên danh mục
+                category_name = url_path.strip('/').split('/')[-1]
+                # Loại bỏ phần ID số từ tên danh mục nếu có
+                category_name = re.sub(r'_\d+$', '', category_name)
+                
+                # Tạo thư mục cho danh mục này
+                category_dir = os.path.join(result_dir, category_name)
+                os.makedirs(category_dir, exist_ok=True)
+                
+                # Thu thập liên kết sản phẩm từ danh mục này
+                socketio.emit('progress_update', {
+                    'percent': category_progress_base + 5, 
+                    'message': f'Đang thu thập liên kết sản phẩm từ danh mục: {category_name}'
+                })
+                
+                category_products = extract_category_links([category_url])
+                
+                if category_products:
+                    # Lưu các liên kết sản phẩm vào file txt riêng của danh mục
+                    category_file = os.path.join(category_dir, f'{category_name}_links.txt')
+                    with open(category_file, 'w', encoding='utf-8') as f:
+                        for link in category_products:
+                            f.write(link + '\n')
+                    
+                    # Thu thập thông tin từ các sản phẩm trong danh mục
+                    socketio.emit('progress_update', {
+                        'percent': category_progress_base + 10, 
+                        'message': f'Đang thu thập thông tin {len(category_products)} sản phẩm từ danh mục: {category_name}'
+                    })
+                    
+                    # Các trường cần thu thập
+                    required_fields = ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Giá', 'Tổng quan', 'URL']
+                    
+                    # Thu thập thông tin sản phẩm sử dụng scrape_product_info thay vì extract_product_info
+                    try:
+                        # Tạo file Excel template tạm thời
+                        excel_temp_path = os.path.join(category_dir, f'{category_name}_template.xlsx')
+                        
+                        # Tạo template Excel đơn giản
+                        wb = openpyxl.Workbook()
+                        ws = wb.active
+                        for col_idx, field in enumerate(required_fields, 1):
+                            ws.cell(row=1, column=col_idx).value = field
+                        wb.save(excel_temp_path)
+                        
+                        # Sử dụng scrape_product_info để thu thập thông tin sản phẩm
+                        socketio.emit('progress_update', {
+                            'percent': category_progress_base + 20, 
+                            'message': f'Đang cào dữ liệu {len(category_products)} sản phẩm từ danh mục: {category_name}'
+                        })
+                        
+                        excel_result = scrape_product_info(category_products, excel_temp_path)
+                        
+                        # Copy file kết quả vào thư mục danh mục
+                        if excel_result and os.path.exists(excel_result):
+                            shutil.copy(excel_result, os.path.join(category_dir, f'{category_name}_products.xlsx'))
+                            product_info_list = pd.read_excel(excel_result).to_dict('records')
+                        else:
+                            product_info_list = []
+                            
+                        # Xóa file template tạm thời
+                        if os.path.exists(excel_temp_path):
+                            os.remove(excel_temp_path)
+                            
+                    except Exception as e:
+                        product_info_list = []
+                        print(f"Lỗi khi thu thập thông tin sản phẩm từ danh mục {category_name}: {str(e)}")
+                        traceback.print_exc()
+                    
+                    # Tạo file Excel chứa thông tin sản phẩm (nếu chưa tạo)
+                    if product_info_list and not os.path.exists(os.path.join(category_dir, f'{category_name}_products.xlsx')):
+                        excel_file = os.path.join(category_dir, f'{category_name}_products.xlsx')
+                        
+                        # Tạo DataFrame từ danh sách thông tin sản phẩm
+                        df_products = pd.DataFrame(product_info_list)
+                        
+                        # Đảm bảo có đủ các cột cần thiết
+                        for field in required_fields:
+                            if field not in df_products.columns:
+                                df_products[field] = ""
+                        
+                        # Chỉ giữ lại các cột theo thứ tự
+                        available_fields = [field for field in required_fields if field in df_products.columns]
+                        df_products = df_products[available_fields]
+                        
+                        # Lưu vào file Excel
+                        with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
+                            df_products.to_excel(writer, index=False, sheet_name='Sản phẩm')
+                            
+                            # Định dạng các cột
+                            worksheet = writer.sheets['Sản phẩm']
+                            column_widths = {'STT': 5, 'Mã sản phẩm': 20, 'Tên sản phẩm': 40, 'Giá': 15, 'Tổng quan': 80, 'URL': 50}
+                            
+                            for field, width in column_widths.items():
+                                if field in available_fields:
+                                    col_idx = available_fields.index(field) + 1  # +1 vì Excel đánh số cột từ 1
+                                    column_letter = get_column_letter(col_idx)
+                                    worksheet.column_dimensions[column_letter].width = width
+                    
+                    # Thêm thông tin danh mục vào danh sách
+                    category_info.append({
+                        'Tên danh mục': category_name,
+                        'URL danh mục': category_url,
+                        'Số sản phẩm': len(category_products),
+                        'Số sản phẩm có thông tin': len(product_info_list)
+                    })
+                else:
+                    print(f"Không tìm thấy sản phẩm nào trong danh mục: {category_url}")
+                    
+            except Exception as e:
+                error_message = str(e)
+                print(f"Lỗi khi xử lý danh mục {category_url}: {error_message}")
+                traceback.print_exc()
+        
+        # Tạo file Excel báo cáo về các danh mục
+        report_file = os.path.join(result_dir, 'category_report.xlsx')
+        df = pd.DataFrame(category_info)
+        
+        if not df.empty:
+            # Chuẩn bị dữ liệu cho các báo cáo chi tiết
+            all_products_data = []
+            failed_products = []
+            products_without_price = []
+            
+            # Thu thập tất cả thông tin sản phẩm từ các danh mục để phân tích
+            for i, category_url in enumerate(valid_urls):
+                try:
+                    # Trích xuất tên danh mục từ URL
+                    parsed_url = urlparse(category_url)
+                    url_path = parsed_url.path
+                    category_name = url_path.strip('/').split('/')[-1]
+                    category_name = re.sub(r'_\d+$', '', category_name)
+                    
+                    # Đường dẫn đến file Excel của danh mục
+                    category_excel = os.path.join(result_dir, category_name, f'{category_name}_products.xlsx')
+                    
+                    # Đường dẫn đến file txt chứa liên kết sản phẩm
+                    category_links_file = os.path.join(result_dir, category_name, f'{category_name}_links.txt')
+                    
+                    # Lấy danh sách các URL sản phẩm từ file txt
+                    all_product_urls = []
+                    if os.path.exists(category_links_file):
+                        with open(category_links_file, 'r', encoding='utf-8') as f:
+                            all_product_urls = [line.strip() for line in f.readlines() if line.strip()]
+                    
+                    # Đọc dữ liệu sản phẩm đã thu thập được
+                    if os.path.exists(category_excel):
+                        # Đọc dữ liệu từ file Excel
+                        df_category = pd.read_excel(category_excel)
+                        
+                        # Thêm cột Danh mục và Trạng thái
+                        df_category['Danh mục'] = category_name
+                        df_category['Trạng thái'] = 'Thành công'
+                        
+                        # Thêm vào danh sách tổng hợp
+                        all_products_data.append(df_category)
+                        
+                        # URL sản phẩm đã thu thập được
+                        collected_urls = set()
+                        if 'URL' in df_category.columns:
+                            collected_urls = set(df_category['URL'].tolist())
+                        
+                        # Danh sách URL sản phẩm không thu thập được
+                        failed_urls = set(all_product_urls) - collected_urls
+                        
+                        # Thêm vào danh sách thất bại
+                        for url in failed_urls:
+                            failed_products.append({
+                                'URL': url,
+                                'Danh mục': category_name,
+                                'Nguyên nhân': 'Không thu thập được dữ liệu'
+                            })
+                        
+                        # Phân loại sản phẩm không có giá
+                        for _, row in df_category.iterrows():
+                            product_data = row.to_dict()
+                            
+                            # Kiểm tra nếu không có giá
+                            if 'Giá' not in product_data or not product_data['Giá'] or str(product_data['Giá']).strip() == '':
+                                products_without_price.append({
+                                    'STT': product_data.get('STT', ''),
+                                    'Mã sản phẩm': product_data.get('Mã sản phẩm', ''),
+                                    'Tên sản phẩm': product_data.get('Tên sản phẩm', ''),
+                                    'URL': product_data.get('URL', ''),
+                                    'Danh mục': category_name,
+                                    'Ghi chú': 'Không có thông tin giá'
+                                })
+                    else:
+                        # Nếu không có file Excel, tất cả các URL sản phẩm đều thất bại
+                        for url in all_product_urls:
+                            failed_products.append({
+                                'URL': url,
+                                'Danh mục': category_name,
+                                'Nguyên nhân': 'Không tạo được file Excel'
+                            })
+                except Exception as e:
+                    print(f"Lỗi khi đọc dữ liệu từ danh mục {category_name}: {str(e)}")
+                    # Thêm thông tin lỗi
+                    if 'category_name' in locals():
+                        failed_products.append({
+                            'URL': category_url,
+                            'Danh mục': category_name,
+                            'Nguyên nhân': f'Lỗi: {str(e)}'
+                        })
+            
+            # Tạo DataFrame cho tất cả sản phẩm
+            if all_products_data:
+                df_all_products = pd.concat(all_products_data, ignore_index=True)
+            else:
+                df_all_products = pd.DataFrame()
+            
+            # Tạo DataFrame cho sản phẩm thất bại
+            df_failed = pd.DataFrame(failed_products)
+            
+            # Tạo DataFrame cho sản phẩm không có giá
+            df_without_price = pd.DataFrame(products_without_price)
+            
+            # Tạo thống kê tổng hợp về trạng thái thu thập
+            collection_stats = []
+            for cat in df['Tên danh mục'].unique():
+                # Tổng số URL sản phẩm từ danh mục
+                category_links_file = os.path.join(result_dir, cat, f'{cat}_links.txt')
+                total_urls = 0
+                if os.path.exists(category_links_file):
+                    with open(category_links_file, 'r', encoding='utf-8') as f:
+                        total_urls = sum(1 for line in f if line.strip())
+                
+                # Số sản phẩm thu thập thành công
+                successful_products = len(df_all_products[df_all_products['Danh mục'] == cat]) if not df_all_products.empty else 0
+                
+                # Số sản phẩm thu thập thất bại
+                failed_count = len(df_failed[df_failed['Danh mục'] == cat]) if not df_failed.empty else 0
+                
+                # Số sản phẩm không có giá
+                no_price_count = len(df_without_price[df_without_price['Danh mục'] == cat]) if not df_without_price.empty else 0
+                
+                # Tính tỷ lệ thành công
+                success_rate = (successful_products / total_urls * 100) if total_urls > 0 else 0
+                
+                collection_stats.append({
+                    'Danh mục': cat,
+                    'Tổng số URL': total_urls,
+                    'Thành công': successful_products,
+                    'Thất bại': failed_count,
+                    'Không có giá': no_price_count,
+                    'Tỷ lệ thành công (%)': round(success_rate, 2)
+                })
+            
+            df_collection_stats = pd.DataFrame(collection_stats)
+            
+            # Lưu vào file Excel với các sheet
+            with pd.ExcelWriter(report_file, engine='openpyxl') as writer:
+                # Sheet tổng quan
+                df.to_excel(writer, sheet_name='Tổng quan', index=False)
+                
+                # Sheet thống kê trạng thái thu thập
+                if not df_collection_stats.empty:
+                    df_collection_stats.to_excel(writer, sheet_name='Thống kê thu thập', index=False)
+                
+                # Sheet sản phẩm thất bại
+                if not df_failed.empty:
+                    df_failed.to_excel(writer, sheet_name='Sản phẩm thất bại', index=False)
+                
+                # Sheet sản phẩm không có giá
+                if not df_without_price.empty:
+                    df_without_price.to_excel(writer, sheet_name='Sản phẩm không giá', index=False)
+                
+                # Sheet tất cả sản phẩm
+                if not df_all_products.empty:
+                    df_all_products.to_excel(writer, sheet_name='Tất cả sản phẩm', index=False)
+                
+                # Định dạng các sheet
+                for sheet_name in writer.sheets:
+                    worksheet = writer.sheets[sheet_name]
+                    for column in worksheet.columns:
+                        max_length = 0
+                        column_letter = get_column_letter(column[0].column)
+                        for cell in column:
+                            try:
+                                if len(str(cell.value)) > max_length:
+                                    max_length = len(str(cell.value))
+                            except:
+                                pass
+                        adjusted_width = (max_length + 2)
+                        if adjusted_width > 100:  # Giới hạn độ rộng cột
+                            adjusted_width = 100
+                        worksheet.column_dimensions[column_letter].width = adjusted_width
+                
+                # Thêm định dạng màu cho sheet thống kê thu thập
+                if not df_collection_stats.empty and 'Thống kê thu thập' in writer.sheets:
+                    worksheet = writer.sheets['Thống kê thu thập']
+                    
+                    # Thêm định dạng có điều kiện cho cột Tỷ lệ thành công
+                    from openpyxl.styles import PatternFill
+                    
+                    # Màu sắc
+                    red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')  # Đỏ
+                    yellow_fill = PatternFill(start_color='FFFFFF00', end_color='FFFFFF00', fill_type='solid')  # Vàng
+                    green_fill = PatternFill(start_color='FF00FF00', end_color='FF00FF00', fill_type='solid')  # Xanh lá
+                    
+                    # Tìm cột Tỷ lệ thành công
+                    success_rate_col = None
+                    for col_idx, col in enumerate(df_collection_stats.columns):
+                        if 'Tỷ lệ thành công' in col:
+                            success_rate_col = col_idx
+                            break
+                    
+                    if success_rate_col is not None:
+                        # Áp dụng định dạng có điều kiện (bắt đầu từ dòng 2 vì dòng 1 là tiêu đề)
+                        for row_idx in range(2, len(df_collection_stats) + 2):
+                            cell = worksheet.cell(row=row_idx, column=success_rate_col + 1)  # +1 vì openpyxl đánh số cột từ 1
+                            value = cell.value
+                            
+                            if value < 50:  # Dưới 50% - màu đỏ
+                                cell.fill = red_fill
+                            elif value < 80:  # 50-80% - màu vàng
+                                cell.fill = yellow_fill
+                            else:  # Trên 80% - màu xanh
+                                cell.fill = green_fill
+        
+        # Nén thư mục kết quả thành file ZIP
+        zip_filename = f'category_info_{timestamp}.zip'
+        zip_path = os.path.join(current_app.config['UPLOAD_FOLDER'], zip_filename)
+        
+        # Tạo file ZIP từ thư mục
+        if utils.create_zip_from_folder(result_dir, zip_path):
+            # Gửi thông báo hoàn thành
+            socketio.emit('progress_update', {
+                'percent': 100, 
+                'message': f'Đã hoàn thành thu thập thông tin sản phẩm từ {len(valid_urls)} danh mục!'
+            })
+            
+            # Tạo URL để tải xuống file zip
+            download_url = url_for('main.download_file', filename=zip_filename)
+            
+            # Thông báo thành công
+            success_message = f"Đã thu thập thành công thông tin sản phẩm từ {len(valid_urls)} danh mục."
+            
+            return render_template('index.html', download_url=download_url, success_message=success_message)
+        else:
+            flash('Lỗi khi tạo file ZIP!', 'error')
+            return redirect(url_for('main.index'))
+            
+    except Exception as e:
+        error_message = str(e)
+        # In chi tiết lỗi
+        traceback.print_exc()
+        flash(f'Lỗi: {error_message}', 'error')
+        return redirect(url_for('main.index'))
