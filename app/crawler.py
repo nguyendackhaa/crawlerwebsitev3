@@ -91,6 +91,10 @@ def is_category_url(url):
     """
     Kiểm tra xem URL có phải là URL danh mục hay không
     """
+    # Nhận diện các URL dạng /vn/ten-danh-muc_xxxx/ (trường hợp đặc biệt)
+    if re.search(r'/vn/[^/]+_\d+/?$', url, re.IGNORECASE):
+        return True
+
     # Xử lý riêng cho URL đèn tháp LED
     led_tower_url = "den-thap-led-sang-tinh-chop-nhay-d45mm-qlight-st45l-and-st45ml-series_4779"
     if led_tower_url in url:
@@ -99,8 +103,8 @@ def is_category_url(url):
     
     # Các mẫu regex để phát hiện URL danh mục
     baa_category_patterns = [
-        r'\/category\/', 
-        r'\/danh-muc\/', 
+        r'/category/', 
+        r'/danh-muc/', 
         r'baa\.vn.*\/vn\/[^/]+\/.*-page-\d+',
         r'haiphongtech.+\/danh-muc'
     ]

@@ -186,6 +186,11 @@
                 </button>
             </li>
             <li class="nav-item" role="presentation">
+                <button class="nav-link" id="category-baa-images-tab" data-bs-toggle="tab" data-bs-target="#category-baa-images" type="button" role="tab" aria-controls="category-baa-images" aria-selected="false">
+                    <i class="bi bi-folder-symlink"></i> Tải ảnh từ nhiều danh mục
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
                 <button class="nav-link" id="compare-products-tab" data-bs-toggle="tab" data-bs-target="#compare-products" type="button" role="tab" aria-controls="compare-products" aria-selected="false">
                     <i class="bi bi-bar-chart-line"></i> So sánh mã sản phẩm
                 </button>
@@ -514,6 +519,52 @@
                         
                         <button type="submit" class="btn btn-primary w-100">
                             <i class="bi bi-image"></i> Tải ảnh sản phẩm
+                        </button>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Tab tải ảnh sản phẩm từ nhiều danh mục BAA.vn -->
+            <div class="tab-pane fade" id="category-baa-images" role="tabpanel" aria-labelledby="category-baa-images-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Tải ảnh sản phẩm từ nhiều danh mục BAA.vn</h4>
+                    
+                    <div class="data-format">
+                        <h5>Thông tin về chức năng</h5>
+                        <p>Chức năng này cho phép tải ảnh sản phẩm từ nhiều danh mục của BAA.vn:</p>
+                        <ol>
+                            <li>Tự động truy cập vào từng URL danh mục</li>
+                            <li>Trích xuất tất cả URL sản phẩm từ mỗi danh mục</li>
+                            <li>Tải ảnh sản phẩm với chất lượng cao nhất có thể</li>
+                            <li>Tự động sắp xếp ảnh theo danh mục</li>
+                            <li>Tạo báo cáo chi tiết cho từng danh mục và báo cáo tổng hợp</li>
+                        </ol>
+                        <div class="alert alert-info mt-3">
+                            <i class="bi bi-info-circle-fill me-2"></i> <strong>Ưu điểm:</strong> Chức năng này giúp tự động hóa hoàn toàn quá trình tải ảnh và tổ chức theo cấu trúc danh mục.
+                        </div>
+                    </div>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <p>Nhập danh sách các URL danh mục từ BAA.vn (mỗi URL trên một dòng)</p>
+                        </div>
+                        <div class="step">
+                            <p>Nhấn nút "Tải ảnh theo danh mục" để bắt đầu quá trình</p>
+                        </div>
+                        <div class="step">
+                            <p>Tải xuống file ZIP chứa ảnh đã được tổ chức theo danh mục</p>
+                        </div>
+                    </div>
+
+                    <form action="{{ url_for('main.download_category_baa_images') }}" method="post" enctype="multipart/form-data" id="category-baa-images-form">
+                        <div class="mb-3">
+                            <label for="category_urls" class="form-label">Danh sách các URL danh mục BAA.vn (mỗi URL trên một dòng):</label>
+                            <textarea id="category_urls" name="category_urls" class="form-control" rows="10" required placeholder="Nhập URL danh mục BAA.vn vào đây...
+Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-images"></i> Tải ảnh theo danh mục
                         </button>
                     </form>
                 </div>
@@ -1047,6 +1098,16 @@
                 progressContainer.style.display = 'block';
                 const progressMessage = document.getElementById('progress-message');
                 progressMessage.innerText = 'Đang cào thông tin sản phẩm từ các danh mục...';
+            }
+        });
+
+        document.getElementById('category-baa-images-form').addEventListener('submit', function(e) {
+            const categoryUrls = document.getElementById('category_urls');
+            if (categoryUrls.value.trim() !== '') {
+                const progressContainer = document.getElementById('progress-container');
+                progressContainer.style.display = 'block';
+                const progressMessage = document.getElementById('progress-message');
+                progressMessage.innerText = 'Đang chuẩn bị tải ảnh từ các danh mục...';
             }
         });
     </script>

@@ -2168,3 +2168,251 @@ def scrape_category_products():
         traceback.print_exc()
         flash(f'Lỗi: {error_message}', 'error')
         return redirect(url_for('main.index'))
+
+@main_bp.route('/download-category-baa-images', methods=['POST'])
+def download_category_baa_images():
+    """Tải ảnh sản phẩm từ nhiều danh mục BAA.vn"""
+    try:
+        # Lấy danh sách URL danh mục từ form
+        category_urls_text = request.form.get('category_urls', '')
+        if not category_urls_text.strip():
+            flash('Vui lòng nhập ít nhất một URL danh mục', 'error')
+            return redirect(url_for('main.index'))
+        
+        # Tách danh sách URL thành các dòng riêng biệt
+        category_urls = [url.strip() for url in category_urls_text.splitlines() if url.strip()]
+        
+        # Kiểm tra tính hợp lệ của URL
+        valid_urls = []
+        for url in category_urls:
+            if url.startswith(('http://', 'https://')):
+                valid_urls.append(url)
+            else:
+                flash(f'URL không hợp lệ: {url}', 'warning')
+        
+        if not valid_urls:
+            flash('Không có URL danh mục hợp lệ nào', 'error')
+            return redirect(url_for('main.index'))
+        
+        # Tạo thư mục lưu ảnh với timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], f'baa_category_images_{timestamp}')
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Tạo file báo cáo Excel để theo dõi tiến trình
+        report_file = os.path.join(output_dir, 'tong_hop.xlsx')
+        
+        # Khởi tạo biến lưu trữ kết quả
+        all_results = {
+            'total_categories': len(valid_urls),
+            'total_products': 0,
+            'total_success': 0,
+            'total_failed': 0,
+            'categories': []
+        }
+        
+        # Import các module
+        from app.crawler import extract_product_urls, download_baa_product_images_fixed
+        from urllib.parse import urlparse
+        import pandas as pd
+        import openpyxl
+        import traceback
+        
+        # Xử lý từng danh mục
+        for index, category_url in enumerate(valid_urls):
+            try:
+                # Cập nhật tiến trình
+                progress = int((index / len(valid_urls)) * 90)
+                socketio.emit('progress_update', {
+                    'percent': progress,
+                    'message': f'Đang xử lý danh mục {index+1}/{len(valid_urls)}: {category_url}'
+                })
+                
+                # Trích xuất tên danh mục từ URL
+                category_name = extract_category_name(category_url)
+                category_dir = os.path.join(output_dir, category_name)
+                os.makedirs(category_dir, exist_ok=True)
+                
+                # Trích xuất URL sản phẩm từ danh mục
+                product_urls = extract_product_urls(category_url)
+                
+                # Lưu danh sách URL sản phẩm
+                urls_file = os.path.join(category_dir, 'product_urls.txt')
+                with open(urls_file, 'w', encoding='utf-8') as f:
+                    for url in product_urls:
+                        f.write(f"{url}\n")
+                
+                # Tải ảnh sản phẩm
+                results = download_baa_product_images_fixed(product_urls, category_dir)
+                
+                # Cập nhật kết quả
+                category_result = {
+                    'name': category_name,
+                    'url': category_url,
+                    'total_products': len(product_urls),
+                    'success': results['success'],
+                    'failed': results['failed'],
+                    'image_paths': results['image_paths']
+                }
+                
+                all_results['categories'].append(category_result)
+                all_results['total_products'] += len(product_urls)
+                all_results['total_success'] += results['success']
+                all_results['total_failed'] += results['failed']
+                
+                # Lưu báo cáo cho danh mục
+                category_report_file = os.path.join(category_dir, 'bao_cao.xlsx')
+                create_image_report(results['report_data'], category_report_file)
+                
+                socketio.emit('progress_update', {
+                    'percent': progress + 3,
+                    'message': f'Đã tải {results["success"]}/{len(product_urls)} ảnh từ danh mục {category_name}'
+                })
+                
+            except Exception as e:
+                print(f"Lỗi khi xử lý danh mục {category_url}: {str(e)}")
+                traceback.print_exc()
+                all_results['categories'].append({
+                    'name': extract_category_name(category_url),
+                    'url': category_url,
+                    'error': str(e),
+                    'total_products': 0,
+                    'success': 0,
+                    'failed': 0,
+                    'image_paths': []
+                })
+        
+        # Tạo báo cáo tổng hợp
+        create_category_images_report(all_results, report_file)
+        
+        # Nén kết quả
+        zip_file = output_dir + '.zip'
+        utils.create_zip_from_folder(output_dir, zip_file)
+        
+        # Xóa thư mục tạm sau khi nén
+        # shutil.rmtree(output_dir)
+        
+        socketio.emit('progress_update', {
+            'percent': 100,
+            'message': 'Hoàn tất tải ảnh từ các danh mục. Đang chuẩn bị tải xuống...'
+        })
+        
+        # Chuyển hướng để tải xuống
+        return redirect(url_for('main.download_file', filename=os.path.basename(zip_file)))
+        
+    except Exception as e:
+        error_message = str(e)
+        traceback.print_exc()
+        flash(f'Lỗi khi tải ảnh từ danh mục: {error_message}', 'error')
+        return redirect(url_for('main.index'))
+
+def extract_category_name(url):
+    """Trích xuất tên danh mục từ URL"""
+    try:
+        # Loại bỏ protocol và tên miền
+        path = urlparse(url).path
+        
+        # Loại bỏ các phần không cần thiết
+        parts = [p for p in path.split('/') if p and p not in ['vn', 'Category', 'tag']]
+        
+        if parts:
+            # Lấy phần cuối cùng của đường dẫn
+            last_part = parts[-1]
+            
+            # Xử lý trường hợp có tham số ở cuối URL
+            if '?' in last_part:
+                last_part = last_part.split('?')[0]
+            
+            # Loại bỏ ID ở cuối URL nếu có
+            if '_' in last_part and last_part.split('_')[-1].isdigit():
+                last_part = '_'.join(last_part.split('_')[:-1])
+            
+            # Chuyển đổi dấu gạch ngang thành dấu gạch dưới
+            cleaned_name = last_part.replace('-', '_')
+            
+            return cleaned_name
+        
+        # Nếu không trích xuất được, sử dụng timestamp
+        return datetime.now().strftime('category_%Y%m%d_%H%M%S')
+        
+    except Exception:
+        # Nếu có lỗi, sử dụng timestamp
+        return datetime.now().strftime('category_%Y%m%d_%H%M%S')
+
+def create_image_report(report_data, output_file):
+    """Tạo báo cáo Excel về việc tải ảnh"""
+    try:
+        # Tạo DataFrame từ dữ liệu báo cáo
+        df = pd.DataFrame(report_data)
+        
+        # Lưu vào file Excel
+        with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Báo cáo tải ảnh', index=False)
+            
+            # Tự động điều chỉnh chiều rộng các cột
+            worksheet = writer.sheets['Báo cáo tải ảnh']
+            for i, col in enumerate(df.columns):
+                max_length = max(df[col].astype(str).map(len).max(), len(col)) + 2
+                worksheet.column_dimensions[worksheet.cell(row=1, column=i+1).column_letter].width = max_length
+                
+        return True
+    except Exception as e:
+        print(f"Lỗi khi tạo báo cáo: {str(e)}")
+        return False
+
+def create_category_images_report(results, output_file):
+    """Tạo báo cáo tổng hợp về việc tải ảnh từ các danh mục"""
+    try:
+        # Tạo workbook
+        wb = openpyxl.Workbook()
+        
+        # Tạo sheet tổng quan
+        ws_overview = wb.active
+        ws_overview.title = "Tổng quan"
+        
+        # Thêm thông tin tổng quan
+        ws_overview.append(["Báo cáo tải ảnh từ nhiều danh mục"])
+        ws_overview.append(["Thời gian tạo:", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
+        ws_overview.append([])
+        ws_overview.append(["Tổng số danh mục:", results['total_categories']])
+        ws_overview.append(["Tổng số sản phẩm:", results['total_products']])
+        ws_overview.append(["Số ảnh tải thành công:", results['total_success']])
+        ws_overview.append(["Số ảnh tải thất bại:", results['total_failed']])
+        
+        # Tạo sheet chi tiết danh mục
+        ws_details = wb.create_sheet("Chi tiết danh mục")
+        ws_details.append(["STT", "Tên danh mục", "URL danh mục", "Số sản phẩm", "Thành công", "Thất bại", "Tỷ lệ thành công"])
+        
+        # Thêm thông tin chi tiết từng danh mục
+        for i, category in enumerate(results['categories']):
+            success_rate = 0
+            if category.get('total_products', 0) > 0:
+                success_rate = (category.get('success', 0) / category.get('total_products', 0)) * 100
+                
+            ws_details.append([
+                i + 1,
+                category.get('name', 'N/A'),
+                category.get('url', 'N/A'),
+                category.get('total_products', 0),
+                category.get('success', 0),
+                category.get('failed', 0),
+                f"{success_rate:.2f}%"
+            ])
+        
+        # Điều chỉnh độ rộng cột
+        for worksheet in [ws_overview, ws_details]:
+            for col in worksheet.columns:
+                max_length = 0
+                column = col[0].column_letter
+                for cell in col:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                worksheet.column_dimensions[column].width = max_length + 2
+        
+        # Lưu workbook
+        wb.save(output_file)
+        return True
+        
+    except Exception as e:
+        print(f"Lỗi khi tạo báo cáo tổng hợp: {str(e)}")
+        return False
