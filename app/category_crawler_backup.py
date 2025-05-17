@@ -181,6 +181,7 @@ class CategoryCrawler:
             
             # Lưu đường dẫn file ZIP vào session nếu đang chạy trong ứng dụng web
             try:
+                from flask import session
                 if 'session' in globals() or 'session' in locals():
                     session['last_download'] = zip_filename
             except (ImportError, RuntimeError):
@@ -493,7 +494,7 @@ class CategoryCrawler:
                     log_and_emit(f"Lỗi khi xử lý sản phẩm: {str(e)}")
                     
         # Thu thập tất cả kết quả
-        product_info_list = []
+                product_info_list = []
         while not result_queue.empty():
             product_info = result_queue.get()
             if isinstance(product_info, dict):  # Đảm bảo chỉ lấy các đối tượng dict
@@ -521,7 +522,13 @@ class CategoryCrawler:
         excel_file = os.path.join(category_dir, f"{category_name}_products.xlsx")
         if product_info_list:
             # Chỉ lấy các trường quan trọng để lưu vào Excel
-            important_fields = ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Giá', 'URL', 'Mô tả', 'Ảnh sản phẩm']
+            important_fields = ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Giá', 'URL']
+            
+            # Thêm các trường khác nếu có
+            for product in product_info_list:
+                for key in product.keys():
+                    if key not in important_fields and key != 'index' and key != 'Tổng quan' and not key.startswith('_'):
+                        important_fields.append(key)
             
             # Tạo DataFrame từ danh sách sản phẩm với các trường quan trọng
             df = pd.DataFrame([{field: product.get(field, '') for field in important_fields} for product in product_info_list])
@@ -639,13 +646,291 @@ class CategoryCrawler:
         except Exception as e:
             print(f"Lỗi khi tạo báo cáo: {str(e)}")
             traceback.print_exc()
+    
+    def _download_codienhaiau_product_image(self, soup, product_url, output_dir, product_code):
+        """Tải ảnh sản phẩm từ trang codienhaiau.com với chất lượng cao nhất"""
+        try:
+            # Tạo thư mục images để lưu ảnh
+            images_dir = os.path.join(output_dir, 'images')
+            os.makedirs(images_dir, exist_ok=True)
             
+            # Tạo thư mục riêng cho ảnh gốc
+            original_images_dir = os.path.join(output_dir, 'images_original')
+            os.makedirs(original_images_dir, exist_ok=True)
+            
+            # Tìm tất cả các ảnh sản phẩm
+            all_images_urls = []
+            main_image_url = None
+            
+            # Ưu tiên tìm ảnh độ phân giải cao trong popup lightbox
+            cbox_content = soup.select_one('#cboxLoadedContent')
+            if cbox_content:
+                img = cbox_content.select_one('img.cboxPhoto')
+                if img and img.get('src'):
+                    main_image_url = img.get('src')
+                    all_images_urls.append(main_image_url)
+                    print(f"Đã tìm thấy ảnh độ phân giải cao trong cboxLoadedContent: {main_image_url}")
+            
+            # Tìm ảnh trong gallery sản phẩm - ưu tiên ảnh gốc không bị resize
+            gallery_selectors = [
+                '.woocommerce-product-gallery__image a',
+                '.product-thumbnails a',
+                '.thumbnails a',
+                'a.woocommerce-main-image',
+                'a.image-lightbox'
+            ]
+            
+            for selector in gallery_selectors:
+                gallery_links = soup.select(selector)
+                for link in gallery_links:
+                    href = link.get('href')
+                    if href and (href.endswith('.jpg') or href.endswith('.png') or href.endswith('.jpeg') or '/uploads/' in href):
+                        # Loại bỏ các đường dẫn thumbnail có kích thước nhỏ (100x100, etc.)
+                        if not re.search(r'[-_]\d+x\d+\.(jpg|png|jpeg)', href):
+                            if href not in all_images_urls:
+                                all_images_urls.append(href)
+                                if not main_image_url:
+                                    main_image_url = href
+            
+            # Tìm ảnh trong thẻ img - ưu tiên data-large_image và data-src
+            img_selectors = [
+                '.woocommerce-product-gallery__image img',
+                '.images img.wp-post-image',
+                '.product-images img',
+                'img.wp-post-image',
+                '.product-main-image img',
+                '.product-gallery-slider img'
+            ]
+            
+            for selector in img_selectors:
+                images = soup.select(selector)
+                for img in images:
+                    # Ưu tiên tìm ảnh gốc từ các thuộc tính 
+                    if img.get('data-large_image'):
+                        img_url = img.get('data-large_image')
+                        if img_url not in all_images_urls:
+                            all_images_urls.append(img_url)
+                            if not main_image_url:
+                                main_image_url = img_url
+                    elif img.get('data-src'):
+                        img_url = img.get('data-src')
+                        if img_url not in all_images_urls:
+                            all_images_urls.append(img_url)
+                            if not main_image_url:
+                                main_image_url = img_url
+                    elif img.get('src'):
+                        # Thử tìm phiên bản không có kích thước trong src
+                        src = img.get('src')
+                        # Kiểm tra nếu src chứa kích thước như 300x300, thử lấy phiên bản gốc
+                        src_parts = src.split('-')
+                        if len(src_parts) > 1 and re.search(r'\d+x\d+', src_parts[-1]):
+                            # Xóa phần kích thước để lấy URL ảnh gốc
+                            base_name = os.path.basename(src)
+                            file_name, ext = os.path.splitext(base_name)
+                            # Tạo URL gốc bằng cách loại bỏ pattern kích thước -NNNxNNN
+                            original_file = re.sub(r'-\d+x\d+(\.[^.]+)$', r'\1', base_name)
+                            original_src = src.replace(base_name, original_file)
+                            if original_src not in all_images_urls:
+                                all_images_urls.append(original_src)
+                                if not main_image_url:
+                                    main_image_url = original_src
+                        elif src not in all_images_urls:
+                            all_images_urls.append(src)
+                            if not main_image_url:
+                                main_image_url = src
+            
+            # Tìm các ảnh trong thẻ source (nếu có lazy loading)
+            source_selectors = ['source[data-srcset]', 'source[srcset]']
+            for selector in source_selectors:
+                for source in soup.select(selector):
+                    srcset = source.get('data-srcset') or source.get('srcset', '')
+                    if srcset:
+                        # Lấy URL của ảnh có độ phân giải cao nhất từ srcset
+                        # Format của srcset: "url1 1x, url2 2x, url3 800w, ..."
+                        largest_url = None
+                        largest_width = 0
+                        for part in srcset.split(','):
+                            part = part.strip()
+                            if not part:
+                                continue
+                            url_parts = part.split(' ')
+                            if len(url_parts) >= 2:
+                                url = url_parts[0]
+                                descriptor = url_parts[1]
+                                if descriptor.endswith('w'):
+                                    try:
+                                        width = int(descriptor[:-1])
+                                        if width > largest_width:
+                                            largest_width = width
+                                            largest_url = url
+                                    except ValueError:
+                                        pass
+                                elif descriptor.endswith('x') and descriptor[:-1] > '1':
+                                    largest_url = url
+                        
+                        if largest_url and largest_url not in all_images_urls:
+                            all_images_urls.append(largest_url)
+                            if not main_image_url:
+                                main_image_url = largest_url
+            
+            # Tìm tài liệu kỹ thuật
+            pdf_urls = []
+            pdf_selectors = [
+                'a[href$=".pdf"]',
+                'a[href*="/pdf/"]',
+                'a[href*="manual"]',
+                'a[href*="datasheet"]',
+                'a[href*="catalog"]'
+            ]
+            
+            for selector in pdf_selectors:
+                pdf_links = soup.select(selector)
+                for link in pdf_links:
+                    href = link.get('href')
+                    if href and ('.pdf' in href.lower() or '/pdf/' in href.lower() or 'manual' in href.lower() or 'datasheet' in href.lower() or 'catalog' in href.lower()):
+                        # Chỉ lưu tài liệu từ cùng domain để tránh tải quá nhiều
+                        parsed_url = urlparse(product_url)
+                        parsed_href = urlparse(href)
+                        
+                        # Nếu href là URL tương đối, tạo URL đầy đủ
+                        if not parsed_href.netloc:
+                            href = urljoin(product_url, href)
+                            parsed_href = urlparse(href)
+                        
+                        # Chỉ tải tài liệu từ cùng domain hoặc các domain đáng tin cậy
+                        if (parsed_href.netloc == parsed_url.netloc or 
+                            parsed_href.netloc.endswith('codienhaiau.com') or 
+                            'drive.google.com' in parsed_href.netloc or
+                            'cloudfront.net' in parsed_href.netloc):
+                            
+                            if href not in pdf_urls:
+                                pdf_urls.append(href)
+            
+            # Tạo thư mục documents để lưu tài liệu
+            if pdf_urls:
+                docs_dir = os.path.join(output_dir, 'documents')
+                os.makedirs(docs_dir, exist_ok=True)
+            
+            # Tải các tài liệu kỹ thuật
+            downloaded_docs = []
+            for i, pdf_url in enumerate(pdf_urls):
+                try:
+                    # Tạo tên file từ URL
+                    pdf_filename = f"{product_code}_doc_{i+1}.pdf" if product_code else f"{os.path.basename(product_url).replace('/', '_')}_doc_{i+1}.pdf"
+                    pdf_path = os.path.join(docs_dir, pdf_filename)
+                    
+                    # Tải PDF
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                        'Referer': product_url
+                    }
+                    response = requests.get(pdf_url, stream=True, headers=headers, timeout=30)
+                    response.raise_for_status()
+                    
+                    # Lưu file
+                    with open(pdf_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                    
+                    print(f"Đã tải tài liệu: {pdf_path}")
+                    downloaded_docs.append(pdf_path)
+                    
+                except Exception as e:
+                    print(f"Lỗi khi tải tài liệu từ {pdf_url}: {str(e)}")
+            
+            # Nếu không tìm thấy ảnh nào, trả về None
+            if not all_images_urls:
+                print(f"Không tìm thấy ảnh sản phẩm trên {product_url}")
+                
+                # Trả về danh sách tài liệu nếu có
+                if downloaded_docs:
+                    return {'documents': downloaded_docs}
+                return None
+            
+            # Tải các ảnh sản phẩm
+            downloaded_images = []
+            for i, image_url in enumerate(all_images_urls):
+                try:
+                    # Xác định định dạng tên file
+                    if i == 0:  # Ảnh chính
+                        image_filename = f"{product_code}" if product_code else f"{os.path.basename(product_url).replace('/', '_')}"
+                    else:  # Ảnh phụ
+                        image_filename = f"{product_code}_{i}" if product_code else f"{os.path.basename(product_url).replace('/', '_')}_{i}"
+                    
+                    # Định dạng file webp và file gốc
+                    webp_path = os.path.join(images_dir, f"{image_filename}.webp")
+                    
+                    # Xác định định dạng file gốc (.jpg, .png, etc.)
+                    original_ext = os.path.splitext(image_url)[1].lower()
+                    if not original_ext or original_ext not in ['.jpg', '.jpeg', '.png', '.gif']:
+                        original_ext = '.jpg'  # Mặc định là jpg
+                    
+                    original_path = os.path.join(original_images_dir, f"{image_filename}{original_ext}")
+                    
+                    # Tải ảnh
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                        'Referer': product_url
+                    }
+                    response = requests.get(image_url, stream=True, headers=headers, timeout=20)
+                    response.raise_for_status()
+                    
+                    # Lưu file gốc trước
+                    with open(original_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                    
+                    print(f"Đã tải ảnh gốc: {original_path}")
+                    
+                    # Kiểm tra nếu có thư viện PIL để chuyển đổi sang webp
+                    try:
+                        from PIL import Image
+                        
+                        # Chuyển đổi ảnh gốc sang webp
+                        image = Image.open(original_path)
+                        
+                        # Chuyển sang RGB nếu cần (để xử lý các ảnh RGBA, P, etc.)
+                        if image.mode in ('RGBA', 'LA'):
+                            # Giữ kênh alpha nếu có
+                            image = image.convert('RGBA')
+                        elif image.mode != 'RGB':
+                            image = image.convert('RGB')
+                        
+                        # Lưu với chất lượng cao
+                        image.save(webp_path, format="WEBP", quality=90)
+                        print(f"Đã tải và chuyển đổi ảnh sản phẩm sang webp: {webp_path}")
+                        downloaded_images.append(webp_path)
+                        
+                    except (ImportError, Exception) as e:
+                        # Nếu không có PIL hoặc có lỗi, chỉ giữ ảnh gốc
+                        print(f"Không thể chuyển đổi sang webp (lỗi: {str(e)}), chỉ giữ ảnh gốc")
+                        downloaded_images.append(original_path)
+                        
+                except Exception as e:
+                    print(f"Lỗi khi tải ảnh từ {image_url}: {str(e)}")
+            
+            # Trả về đường dẫn ảnh đã tải và tài liệu
+            result = {
+                'images': downloaded_images,
+                'original_images': [os.path.join(original_images_dir, f) for f in os.listdir(original_images_dir) if os.path.isfile(os.path.join(original_images_dir, f))]
+            }
+            
+            if downloaded_docs:
+                result['documents'] = downloaded_docs
+                
+            return result
+            
+        except Exception as e:
+            print(f"Lỗi khi tải ảnh sản phẩm: {str(e)}")
+            traceback.print_exc()
+            return None
+
     def extract_codienhaiau_product_info(self, url, index=1, output_dir=None):
         """Trích xuất thông tin sản phẩm từ trang codienhaiau.com"""
         try:
             print(f"Đang trích xuất thông tin từ {url}")
             
-            # Khởi tạo kết quả chỉ với các trường cần thiết
+            # Khởi tạo kết quả
             product_info = {
                 'STT': index,
                 'URL': url,
@@ -653,7 +938,10 @@ class CategoryCrawler:
                 'Tên sản phẩm': "",
                 'Giá': "",
                 'Mô tả': "",
-                'Ảnh sản phẩm': ""
+                'Tổng quan': "",
+                'Ảnh sản phẩm': "",
+                'Ảnh bổ sung': "",
+                'Tài liệu kỹ thuật': ""
             }
             
             # Tải nội dung trang với retry
@@ -679,11 +967,20 @@ class CategoryCrawler:
             
             if not response:
                 raise Exception(f"Không thể tải nội dung từ {url}")
-            
+                
             # Parse HTML
             print(f"  > Đang phân tích HTML từ {url}")
             soup = BeautifulSoup(response.text, 'html.parser')
             print(f"  > Đã phân tích HTML thành công")
+            
+            # Debug: Lưu nội dung HTML trang sản phẩm nếu có upload_folder
+            if self.upload_folder:
+                product_id = url.rstrip('/').split('/')[-1]
+                debug_dir = os.path.join(self.upload_folder, 'debug_products')
+                os.makedirs(debug_dir, exist_ok=True)
+                with open(os.path.join(debug_dir, f"{product_id}.html"), 'w', encoding='utf-8') as f:
+                    f.write(str(soup))
+                print(f"  > Đã lưu HTML debug vào {product_id}.html")
             
             # Trích xuất tên sản phẩm
             print(f"  > Đang trích xuất tên sản phẩm")
@@ -733,16 +1030,6 @@ class CategoryCrawler:
                         product_info['Mã sản phẩm'] = sku_element.text.strip()
                         break
             
-            # Nếu vẫn không tìm thấy, thử trích xuất từ URL
-            if not product_info['Mã sản phẩm'] and '/product/' in url:
-                # Mã sản phẩm có thể nằm trong URL
-                product_path = url.split('/product/')[1].rstrip('/')
-                if '-' in product_path:
-                    # Giả định mã sản phẩm có thể là chuỗi sau dấu gạch ngang cuối cùng
-                    parts = product_path.split('-')
-                    if parts[-1].upper().startswith(('CN', 'SCM')):
-                        product_info['Mã sản phẩm'] = parts[-1].upper()
-            
             # Trích xuất giá sản phẩm
             price_selectors = [
                 'span.woocommerce-Price-amount',
@@ -758,7 +1045,6 @@ class CategoryCrawler:
                     break
             
             # Nếu chưa có mô tả chi tiết, thử tìm trong tab Mô tả sản phẩm
-            original_description = ""
             if not product_info['Mô tả']:
                 description_tab_selectors = [
                     '#tab-description',
@@ -772,12 +1058,10 @@ class CategoryCrawler:
                         # Loại bỏ các script, style không cần thiết
                         for s in desc_element.select('script, style'):
                             s.extract()
-                        original_description = desc_element.text.strip()
-                        product_info['Mô tả'] = original_description
+                        product_info['Mô tả'] = desc_element.text.strip()
                         break
             
-            # Kiểm tra xem đã lấy được bảng thông số kỹ thuật từ trang web chưa
-            specs_table_html = None
+            # Trích xuất thông số kỹ thuật
             tech_table_selectors = [
                 'table.woocommerce-product-attributes',
                 '.woocommerce-product-attributes',
@@ -788,32 +1072,141 @@ class CategoryCrawler:
             for selector in tech_table_selectors:
                 tech_table = soup.select_one(selector)
                 if tech_table:
-                    # Tìm thấy bảng thông số kỹ thuật từ trang web, nhưng không dùng
-                    print("Đã tìm thấy bảng thông số kỹ thuật từ trang web, nhưng sẽ sử dụng bảng chuẩn")
+                    specs_table_html = '<table class="specs-table" border="1" cellpadding="5" style="border-collapse: collapse;"><tbody>'
+                    rows = tech_table.select('tr')
+                    
+                    for row in rows:
+                        # Xử lý các loại hàng khác nhau
+                        th_elements = row.select('th')
+                        td_elements = row.select('td')
+                        
+                        if th_elements and td_elements:
+                            # Kiểm tra nếu có chứa "Tiêu chuẩn" và có ảnh
+                            header_text = th_elements[0].text.strip()
+                            if 'tiêu chuẩn' in header_text.lower() and td_elements[0].find('img'):
+                                # Tìm alt text của ảnh để xác định loại tiêu chuẩn
+                                img = td_elements[0].find('img')
+                                alt_text = img.get('alt', '').strip() if img else ''
+                                
+                                # Trích xuất tên tiêu chuẩn từ alt hoặc src của ảnh
+                                standard_name = ''
+                                if alt_text:
+                                    # Trích xuất từ alt text
+                                    parts = alt_text.split('-')
+                                    if len(parts) > 1:
+                                        standard_name = parts[-1].strip()
+                                    else:
+                                        standard_name = alt_text
+                                else:
+                                    # Nếu không có alt, trích xuất từ đường dẫn ảnh
+                                    src = img.get('src', '')
+                                    if src:
+                                        filename = os.path.basename(src)
+                                        parts = filename.split('.')
+                                        if len(parts) > 1:
+                                            name_parts = parts[0].split('-')
+                                            if len(name_parts) > 1:
+                                                standard_name = name_parts[-1].strip()
+                                
+                                # Xác định tiêu chuẩn dựa trên tên
+                                if 'CE' in standard_name or 'ce' in standard_name.lower():
+                                    standard_name = 'CE'
+                                elif 'UL' in standard_name or 'ul' in standard_name.upper():
+                                    standard_name = 'UL'
+                                elif 'CSA' in standard_name or 'csa' in standard_name.upper():
+                                    standard_name = 'CSA'
+                                elif 'ISO' in standard_name or 'iso' in standard_name.upper():
+                                    standard_name = 'ISO'
+                                elif not standard_name:
+                                    # Nếu không xác định được tên, đặt mặc định là CE
+                                    standard_name = 'CE'
+                                
+                                # Tạo nội dung mới
+                                specs_table_html += f'<tr><td>{header_text}</td><td>tiêu chuẩn | {standard_name}</td></tr>'
+                            else:
+                                # Trường hợp bình thường
+                                specs_table_html += f'<tr><td>{header_text}</td><td>{td_elements[0].text.strip()}</td></tr>'
+                        elif len(td_elements) >= 2:
+                            # Kiểm tra nếu có chứa "Tiêu chuẩn" và có ảnh
+                            first_col_text = td_elements[0].text.strip()
+                            if 'tiêu chuẩn' in first_col_text.lower() and td_elements[1].find('img'):
+                                # Tìm alt text của ảnh để xác định loại tiêu chuẩn
+                                img = td_elements[1].find('img')
+                                alt_text = img.get('alt', '').strip() if img else ''
+                                
+                                # Trích xuất tên tiêu chuẩn từ alt hoặc src của ảnh
+                                standard_name = ''
+                                if alt_text:
+                                    # Trích xuất từ alt text
+                                    parts = alt_text.split('-')
+                                    if len(parts) > 1:
+                                        standard_name = parts[-1].strip()
+                                    else:
+                                        standard_name = alt_text
+                                else:
+                                    # Nếu không có alt, trích xuất từ đường dẫn ảnh
+                                    src = img.get('src', '')
+                                    if src:
+                                        filename = os.path.basename(src)
+                                        parts = filename.split('.')
+                                        if len(parts) > 1:
+                                            name_parts = parts[0].split('-')
+                                            if len(name_parts) > 1:
+                                                standard_name = name_parts[-1].strip()
+                                
+                                # Xác định tiêu chuẩn dựa trên tên
+                                if 'CE' in standard_name or 'ce' in standard_name.lower():
+                                    standard_name = 'CE'
+                                elif 'UL' in standard_name or 'ul' in standard_name.upper():
+                                    standard_name = 'UL'
+                                elif 'CSA' in standard_name or 'csa' in standard_name.upper():
+                                    standard_name = 'CSA'
+                                elif 'ISO' in standard_name or 'iso' in standard_name.upper():
+                                    standard_name = 'ISO'
+                                elif not standard_name:
+                                    # Nếu không xác định được tên, đặt mặc định là CE
+                                    standard_name = 'CE'
+                                
+                                # Tạo nội dung mới
+                                specs_table_html += f'<tr><td>{first_col_text}</td><td>tiêu chuẩn | {standard_name}</td></tr>'
+                            else:
+                                # Trường hợp có colspan thông thường
+                                if td_elements[0].has_attr('colspan'):
+                                    colspan = int(td_elements[0].get('colspan', 1))
+                                    if colspan > 1 and len(td_elements) > 1:
+                                        specs_table_html += f'<tr><td>{td_elements[0].text.strip()}</td><td>{td_elements[1].text.strip()}</td></tr>'
+                                    else:
+                                        specs_table_html += f'<tr><td colspan="2">{td_elements[0].text.strip()}</td></tr>'
+                                else:
+                                    specs_table_html += f'<tr><td>{td_elements[0].text.strip()}</td><td>{td_elements[1].text.strip()}</td></tr>'
+                    
+                    specs_table_html += '</tbody></table>'
+                    product_info['Tổng quan'] = specs_table_html
                     break
             
-            # Luôn tạo bảng thông số kỹ thuật mẫu theo định dạng chuẩn
-            specs_table_html = self._generate_product_spec_table(
-                product_info['Mã sản phẩm'], 
-                product_info['Tên sản phẩm']
-            )
-            
-            # Sử dụng bảng thông số kỹ thuật mẫu
-            product_info['Mô tả'] = specs_table_html
-            
-            # Tải và lưu ảnh sản phẩm nếu có thư mục đầu ra
-            if output_dir and product_info['Mã sản phẩm']:
-                # Tạo URL ảnh theo định dạng yêu cầu
-                product_info['Ảnh sản phẩm'] = f"https://haiphongtech.vn/wp-content/uploads/2025/05/{product_info['Mã sản phẩm']}.webp"
-                
-                # Tải ảnh từ codienhaiau.com và lưu vào thư mục
-                image_url = self._download_codienhaiau_product_image(soup, url, output_dir, product_info['Mã sản phẩm'])
-                if image_url:
-                    # Nếu tìm được URL ảnh từ trang web, vẫn giữ URL ảnh từ haiphongtech.vn
-                    print(f"Đã tải ảnh sản phẩm: {image_url}")
-            else:
-                # Nếu không có thư mục đầu ra hoặc không có mã sản phẩm, chỉ lấy URL ảnh
-                product_info['Ảnh sản phẩm'] = self._get_image_url(soup, url, product_info['Mã sản phẩm'])
+            # Tải ảnh sản phẩm nếu có thư mục đầu ra
+            if output_dir:
+                media_data = self._download_codienhaiau_product_image(soup, url, output_dir, product_info['Mã sản phẩm'])
+                if media_data:
+                    # Xử lý trường hợp trả về dict mới
+                    if isinstance(media_data, dict):
+                        # Xử lý ảnh chính
+                        if 'main_image' in media_data and media_data['main_image']:
+                            product_info['Ảnh sản phẩm'] = media_data['main_image']
+                        
+                        # Xử lý danh sách ảnh bổ sung
+                        if 'all_images' in media_data and len(media_data['all_images']) > 1:
+                            # Bỏ qua ảnh chính và chỉ lấy các ảnh phụ
+                            additional_images = media_data['all_images'][1:] if len(media_data['all_images']) > 1 else []
+                            if additional_images:
+                                product_info['Ảnh bổ sung'] = ', '.join(additional_images)
+                        
+                        # Xử lý tài liệu kỹ thuật
+                        if 'documents' in media_data and media_data['documents']:
+                            product_info['Tài liệu kỹ thuật'] = ', '.join(media_data['documents'])
+                    else:
+                        # Trường hợp cũ (chỉ trả về đường dẫn ảnh chính)
+                        product_info['Ảnh sản phẩm'] = media_data
             
             print(f"Đã trích xuất thông tin sản phẩm: {product_info['Tên sản phẩm']}, Mã: {product_info['Mã sản phẩm']}, Giá: {product_info['Giá']}")
             return product_info
@@ -822,294 +1215,7 @@ class CategoryCrawler:
             print(f"Lỗi khi trích xuất thông tin từ {url}: {str(e)}")
             traceback.print_exc()
             return product_info
-
-    def _generate_product_spec_table(self, product_code, product_name):
-        """Tạo bảng thông số kỹ thuật mẫu cho sản phẩm Autonics dựa trên mã sản phẩm"""
-        table_html = '<table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; font-family: Arial;"><thead><tr><th>Thông số</th><th>Giá trị</th></tr></thead><tbody>'
-        
-        # Xác định loại sản phẩm dựa trên mã sản phẩm
-        product_type = ""
-        product_specs = {}
-        
-        # Xử lý cho bộ chuyển đổi tín hiệu CN-6xxx
-        if product_code and product_code.startswith("CN-6"):
-            product_type = "signal_converter"
-            
-            # Xác định loại tín hiệu đầu vào/đầu ra từ mã sản phẩm
-            input_type = ""
-            output_type = ""
-            
-            if "C1" in product_code:
-                input_type = "RTD : JPt100Ω, DPt100Ω, DPt50Ω, Cu50Ω, Cu100Ω"
-                output_type = "K, J, E, T, R, B, S, N, C, L, U, PLII"
-            elif "C2" in product_code:
-                input_type = "TC : K, J, E, T, R, B, S, N, C, L, U, PLII"
-                output_type = "RTD : JPt100Ω, DPt100Ω, DPt50Ω, Cu50Ω, Cu100Ω"
-            elif "R1" in product_code:
-                input_type = "RTD : JPt100Ω, DPt100Ω, DPt50Ω, Cu50Ω, Cu100Ω"
-                output_type = "4-20mA, 0-20mA"
-            elif "R2" in product_code:
-                input_type = "TC : K, J, E, T, R, B, S, N, C, L, U, PLII"
-                output_type = "4-20mA, 0-20mA"
-            elif "R4" in product_code:
-                input_type = "Nhiệt điện trở NTC/PTC"
-                output_type = "4-20mA, 0-20mA"
-            elif "V1" in product_code:
-                input_type = "RTD : JPt100Ω, DPt100Ω, DPt50Ω, Cu50Ω, Cu100Ω"
-                output_type = "1-5V DC, 0-5V DC, 0-10V DC"
-            elif "V2" in product_code:
-                input_type = "TC : K, J, E, T, R, B, S, N, C, L, U, PLII"
-                output_type = "1-5V DC, 0-5V DC, 0-10V DC"
-            
-            # Xác định nguồn cấp dựa trên mã sản phẩm
-            power_supply = "100-240VAC"
-            if "6401" in product_code:
-                power_supply = "24VDC"
-            
-            # Tạo thông số sản phẩm
-            product_specs = {
-                "Nguồn cấp": power_supply,
-                "Loại ngõ vào_RTD": input_type,
-                "Loại ngõ vào_TC": output_type,
-                "Nhiệt độ xung quanh": "-10 đến 50°C, bảo quản: -20 đến 60°C",
-                "Độ ẩm xung quanh": "35 đến 85%RH, bảo quản: 35 đến 85%RH",
-                "Tiêu chuẩn": "RoHS"
-            }
-        # Xử lý cho bộ chuyển tín hiệu SCM
-        elif product_code and product_code.startswith("SCM-"):
-            product_type = "scm_converter"
-            
-            # Tạo thông số sản phẩm cho SCM
-            product_specs = {
-                "Nguồn cấp": "24VDC",
-                "Loại ngõ vào": "USB",
-                "Loại ngõ ra": "RS485",
-                "Tốc độ truyền": "9600, 19200, 38400, 57600, 115200 bps",
-                "Nhiệt độ xung quanh": "-10 đến 50°C, bảo quản: -20 đến 60°C",
-                "Độ ẩm xung quanh": "35 đến 85%RH, bảo quản: 35 đến 85%RH",
-                "Tiêu chuẩn": "CE"
-            }
-        
-        # Thêm các thông số vào bảng
-        if product_specs:
-            for key, value in product_specs.items():
-                table_html += f'<tr><td>{key}</td><td>{value}</td></tr>'
-        else:
-            # Nếu không xác định được loại sản phẩm, thêm thông tin cơ bản
-            table_html += f'<tr><td>Mã sản phẩm</td><td>{product_code}</td></tr>'
-            table_html += f'<tr><td>Tên sản phẩm</td><td>{product_name}</td></tr>'
-            table_html += f'<tr><td>Tiêu chuẩn</td><td>CE</td></tr>'
-        
-        # Thêm copyright
-        table_html += '<tr><td>Copyright</td><td>Haiphongtech.vn</td></tr>'
-        table_html += '</tbody></table>'
-        
-        return table_html
-
-    def _extract_standard_from_img(self, img):
-        """Trích xuất thông tin tiêu chuẩn từ thẻ img"""
-        if not img:
-            return "CE"
-        
-        alt_text = img.get('alt', '').strip()
-        src = img.get('src', '')
-        
-        # Trích xuất tên tiêu chuẩn từ alt hoặc src của ảnh
-        standard_name = ''
-        if alt_text:
-            # Trích xuất từ alt text
-            parts = alt_text.split('-')
-            if len(parts) > 1:
-                standard_name = parts[-1].strip()
-            else:
-                standard_name = alt_text
-        elif src:
-            # Nếu không có alt, trích xuất từ đường dẫn ảnh
-            filename = os.path.basename(src)
-            parts = filename.split('.')
-            if len(parts) > 1:
-                name_parts = parts[0].split('-')
-                if len(name_parts) > 1:
-                    standard_name = name_parts[-1].strip()
-        
-        # Xác định tiêu chuẩn dựa trên tên
-        if 'CE' in standard_name or 'ce' in standard_name.lower():
-            return 'CE'
-        elif 'UL' in standard_name or 'ul' in standard_name.upper():
-            return 'UL'
-        elif 'CSA' in standard_name or 'csa' in standard_name.upper():
-            return 'CSA'
-        elif 'ISO' in standard_name or 'iso' in standard_name.upper():
-            return 'ISO'
-        elif 'RoHS' in standard_name or 'rohs' in standard_name.upper():
-            return 'RoHS'
-        
-        # Nếu không xác định được tên, đặt mặc định là RoHS
-        return 'RoHS'
-
-    def _get_image_url(self, soup, product_url, product_code):
-        """Lấy URL ảnh sản phẩm (không tải về)"""
-        # Nếu có mã sản phẩm, trả về URL theo định dạng yêu cầu
-        if product_code:
-            return f"https://haiphongtech.vn/wp-content/uploads/2025/05/{product_code}.webp"
-        
-        # Nếu không có mã sản phẩm, tìm URL ảnh từ trang web
-        try:
-            # Tìm ảnh trong div có id="cboxLoadedContent"
-            cbox_content = soup.select_one('#cboxLoadedContent')
-            if cbox_content:
-                img = cbox_content.select_one('img.cboxPhoto')
-                if img and img.get('src'):
-                    return img.get('src')
-        
-            # Nếu không tìm thấy, thử các selector khác
-            gallery_selectors = [
-                '.woocommerce-product-gallery__image a',
-                '.product-thumbnails a',
-                '.thumbnails a',
-                '.images img.wp-post-image',
-                '.product-images img',
-                'img.wp-post-image'
-            ]
-            
-            for selector in gallery_selectors:
-                elements = soup.select(selector)
-                for element in elements:
-                    if element.name == 'a' and element.get('href'):
-                        return element.get('href')
-                    elif element.name == 'img':
-                        if element.get('data-large_image'):
-                            return element.get('data-large_image')
-                        elif element.get('data-src'):
-                            return element.get('data-src')
-                        elif element.get('src'):
-                            return element.get('src')
-        
-            # Không tìm thấy URL ảnh
-            print(f"Không tìm thấy URL ảnh cho sản phẩm: {product_url}")
-            return ""
-        except Exception as e:
-            print(f"Lỗi khi tìm URL ảnh sản phẩm: {str(e)}")
-            return ""
-
-    def _download_codienhaiau_product_image(self, soup, product_url, output_dir, product_code):
-        """Tải ảnh sản phẩm từ trang web và lưu vào thư mục"""
-        try:
-            # Tạo thư mục images nếu chưa tồn tại
-            images_dir = os.path.join(output_dir, 'images')
-            os.makedirs(images_dir, exist_ok=True)
-            
-            # Định dạng tên file ảnh
-            if not product_code:
-                product_code = os.path.basename(product_url).replace('/', '_')
-            
-            image_filename = f"{product_code}.webp"
-            image_path = os.path.join(images_dir, image_filename)
-            
-            # Tìm URL ảnh từ trang web
-            image_url = None
-            
-            # Tìm ảnh trong div có id="cboxLoadedContent" - đây là ưu tiên số 1
-            cbox_content = soup.select_one('#cboxLoadedContent')
-            if cbox_content:
-                img = cbox_content.select_one('img.cboxPhoto')
-                if img and img.get('src'):
-                    image_url = img.get('src')
-                    print(f"Đã tìm thấy ảnh chất lượng cao trong cboxLoadedContent: {image_url}")
-            
-            # Nếu không tìm thấy, thử tìm trong gallery
-            if not image_url:
-                # Tìm kiếm ảnh qua các selector
-                found_image = False
-                gallery_selectors = [
-                    '.woocommerce-product-gallery__image a',
-                    '.product-thumbnails a',
-                    '.thumbnails a',
-                    'a.woocommerce-main-image',
-                    'a.image-lightbox'
-                ]
-                
-                for selector in gallery_selectors:
-                    if found_image:
-                        continue
-                        
-                    gallery_links = soup.select(selector)
-                    for link in gallery_links:
-                        href = link.get('href')
-                        if href and (href.endswith('.jpg') or href.endswith('.png') or href.endswith('.jpeg') or href.endswith('.webp') or '/uploads/' in href):
-                            # Loại bỏ các đường dẫn thumbnail có kích thước nhỏ
-                            if not re.search(r'[-_]\d+x\d+\.(jpg|png|jpeg|webp)', href):
-                                image_url = href
-                                found_image = True
-                                break
-            
-            # Nếu vẫn không tìm thấy, thử tìm trong thẻ img
-            if not image_url:
-                # Tìm kiếm ảnh qua các selector
-                found_image = False
-                img_selectors = [
-                    '.woocommerce-product-gallery__image img',
-                    '.images img.wp-post-image',
-                    '.product-images img',
-                    'img.wp-post-image',
-                    '.product-main-image img',
-                    '.product-gallery-slider img'
-                ]
-                
-                for selector in img_selectors:
-                    if found_image:
-                        continue
-                        
-                    images = soup.select(selector)
-                    for img in images:
-                        # Ưu tiên tìm ảnh gốc từ các thuộc tính
-                        if img.get('data-large_image'):
-                            image_url = img.get('data-large_image')
-                            found_image = True
-                            break
-                        elif img.get('data-src'):
-                            image_url = img.get('data-src')
-                            found_image = True
-                            break
-                        elif img.get('src'):
-                            image_url = img.get('src')
-                            found_image = True
-                            break
-            
-            # Nếu không tìm thấy URL ảnh, trả về URL ảnh theo định dạng yêu cầu
-            if not image_url:
-                print(f"Không tìm thấy URL ảnh cho sản phẩm: {product_url}")
-                return f"https://haiphongtech.vn/wp-content/uploads/2025/05/{product_code}.webp"
-            
-            # Tải ảnh về
-            try:
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                    'Referer': product_url
-                }
-                
-                response = requests.get(image_url, headers=headers, stream=True, timeout=30)
-                response.raise_for_status()
-                
-                # Lưu ảnh
-                with open(image_path, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                
-                print(f"Đã tải và lưu ảnh sản phẩm: {image_path}")
-                
-                # Trả về URL ảnh theo định dạng mới cho Haiphongtech
-                return f"https://haiphongtech.vn/wp-content/uploads/2025/05/{product_code}.webp"
-                
-            except Exception as e:
-                print(f"Lỗi khi tải ảnh từ {image_url}: {str(e)}")
-                return f"https://haiphongtech.vn/wp-content/uploads/2025/05/{product_code}.webp"
-        
-        except Exception as e:
-            print(f"Lỗi khi xử lý ảnh sản phẩm: {str(e)}")
-            traceback.print_exc()
-            return f"https://haiphongtech.vn/wp-content/uploads/2025/05/{product_code}.webp"
-
+    
     def process_codienhaiau_categories(self, category_urls_text):
         """Xử lý danh sách URL danh mục trên codienhaiau.com"""
         try:
@@ -1130,10 +1236,10 @@ class CategoryCrawler:
                     valid_urls.append(url)
                 else:
                     invalid_urls.append(url)
-        
+            
             if not valid_urls:
                 raise ValueError('Không có URL danh mục codienhaiau.com hợp lệ!')
-            
+                
             # Gửi thông báo cập nhật
             emit_progress(5, f'Đã tìm thấy {len(valid_urls)} URL danh mục hợp lệ')
             
@@ -1211,6 +1317,7 @@ class CategoryCrawler:
             
             # Lưu đường dẫn file ZIP vào session nếu đang chạy trong ứng dụng web
             try:
+                from flask import session
                 if 'session' in globals() or 'session' in locals():
                     session['last_download'] = zip_filename
             except (ImportError, RuntimeError):
@@ -1224,7 +1331,7 @@ class CategoryCrawler:
             error_message = str(e)
             traceback.print_exc()
             return False, f'Lỗi: {error_message}', None
-
+            
     def _get_soup(self, url):
         """Lấy nội dung trang web và trả về đối tượng BeautifulSoup với retry logic"""
         headers = {
@@ -1243,7 +1350,7 @@ class CategoryCrawler:
                 else:
                     print(f"Lỗi khi tải {url} sau {self.max_retries} lần thử: {str(e)}")
                     raise
-
+    
     def _extract_codienhaiau_links(self, soup, current_url):
         """Trích xuất liên kết sản phẩm và phân trang từ trang codienhaiau.com"""
         product_urls = set()
@@ -1306,14 +1413,14 @@ class CategoryCrawler:
                             else:
                                 continue
                     else:
-                        href = element.get('href', '')
+                        href = element.get('href')
                     
                     # Kiểm tra xem liên kết này có phải là liên kết sản phẩm không
                     if href and '/product/' in href and not href.endswith('/product/'):
                         # Đảm bảo URL đầy đủ
                         full_url = urljoin(current_url, href)
                         product_urls.add(full_url)
-            
+                
             # Xác định mẫu URL cơ sở cho phân trang
             base_url = current_url
             page_number = 1
@@ -1330,7 +1437,7 @@ class CategoryCrawler:
                 page_url_template = f"{base_url}page/{{0}}/"
             else:
                 page_url_template = f"{base_url}/page/{{0}}/"
-            
+                
             # Tìm phân trang
             pagination_selectors = [
                 '.woocommerce-pagination a.page-numbers', 
@@ -1414,8 +1521,8 @@ class CategoryCrawler:
                             if selector == 'h2.woocommerce-loop-product__title':
                                 for title in links:
                                     parent_link = title.find_parent('a')
-                                    if parent_link and parent_link.get('href'):
-                                        href = parent_link.get('href')
+                                    if parent_link and 'href' in parent_link.attrs:
+                                        href = parent_link['href']
                                         if href and '/product/' in href:
                                             full_url = urljoin(current_url, href)
                                             if full_url not in product_urls:  # Kiểm tra trùng lặp
@@ -1446,4 +1553,4 @@ class CategoryCrawler:
         except Exception as e:
             print(f"Lỗi khi trích xuất liên kết từ {current_url}: {str(e)}")
             traceback.print_exc()
-            return []
+            return [] 

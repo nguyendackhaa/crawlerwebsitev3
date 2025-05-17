@@ -1,5 +1,5 @@
 import os
-from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, send_from_directory, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, send_from_directory, jsonify, session
 from werkzeug.utils import secure_filename
 import tempfile
 import traceback
@@ -9,6 +9,7 @@ from openpyxl.utils import get_column_letter
 from datetime import datetime
 from flask import current_app
 from app import utils, socketio
+from app.category_crawler import CategoryCrawler
 import time
 import openpyxl
 import re
@@ -244,6 +245,25 @@ def process_url():
 @main_bp.route('/download/<path:filename>')
 def download_file(filename):
     download_dir = os.path.join(current_app.root_path, 'downloads')
+    file_path = os.path.join(download_dir, filename)
+    
+    # Kiểm tra xem file có tồn tại không
+    if not os.path.exists(file_path):
+        # Trường hợp file ZIP không tồn tại nhưng thư mục tồn tại (chưa được nén)
+        if filename.endswith('.zip'):
+            folder_name = filename[:-4]  # Bỏ phần .zip để lấy tên thư mục
+            folder_path = os.path.join(download_dir, folder_name)
+            
+            # Kiểm tra xem thư mục có tồn tại không
+            if os.path.exists(folder_path) and os.path.isdir(folder_path):
+                try:
+                    # Tạo file ZIP mới
+                    utils.create_zip_from_folder(folder_path, file_path)
+                    print(f"Đã tạo file ZIP mới: {file_path}")
+                except Exception as e:
+                    print(f"Lỗi khi tạo file ZIP: {str(e)}")
+                    flash(f'Lỗi khi tạo file ZIP: {str(e)}', 'error')
+                    return redirect(url_for('main.index'))
     
     # Tách filename thành thư mục và tên file nếu có '/'
     if '/' in filename:
@@ -2416,3 +2436,61 @@ def create_category_images_report(results, output_file):
     except Exception as e:
         print(f"Lỗi khi tạo báo cáo tổng hợp: {str(e)}")
         return False
+
+@main_bp.route('/crawl-codienhaiau', methods=['POST'])
+def crawl_codienhaiau():
+    try:
+        category_urls = request.form.get('category_urls', '').strip()
+        
+        if not category_urls:
+            flash('Vui lòng nhập ít nhất một URL danh mục.', 'error')
+            return redirect(url_for('main.index'))
+        
+        # Tạo crawler và xử lý danh mục
+        crawler = CategoryCrawler(socketio, upload_folder=current_app.config['UPLOAD_FOLDER'])
+        success, message, zip_path = crawler.process_codienhaiau_categories(category_urls)
+        
+        if success:
+            filename = os.path.basename(zip_path) if zip_path else session.get('last_download', '')
+            if filename:
+                # Lưu thông báo thành công và URL tải xuống
+                flash(message, 'success')
+                return redirect(url_for('main.download_file', filename=filename))
+            else:
+                flash('Đã xử lý thành công nhưng không tìm thấy file để tải xuống.', 'warning')
+                return redirect(url_for('main.index'))
+        else:
+            flash(f'Lỗi: {message}', 'error')
+            return redirect(url_for('main.index'))
+        
+    except Exception as e:
+        traceback.print_exc()
+        flash(f'Lỗi không xác định: {str(e)}', 'error')
+        return redirect(url_for('main.index'))
+
+@main_bp.route('/scrap-category-products', methods=['POST'])
+def scrap_category_products():
+    try:
+        category_urls = request.form.get('category_urls', '').strip()
+        
+        if not category_urls:
+            return jsonify({'status': 'error', 'message': 'Vui lòng nhập ít nhất một URL danh mục.'})
+        
+        # Tạo crawler và xử lý danh mục
+        crawler = CategoryCrawler(socketio, upload_folder=current_app.config['UPLOAD_FOLDER'])
+        success, message = crawler.process_category_urls(category_urls)
+        
+        if success:
+            filename = session.get('last_download', '')
+            if filename:
+                return jsonify({
+                    'status': 'success',
+                    'message': message,
+                    'download': filename
+                })
+        
+        return jsonify({'status': 'error', 'message': message})
+        
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': f'Lỗi không xác định: {str(e)}'})
