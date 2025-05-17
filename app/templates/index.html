@@ -99,19 +99,41 @@
         #log-terminal {
             display: none;
             margin-top: 15px; 
-            background: #000; 
-            color: #0f0; 
-            font-family: Consolas, monospace; 
-            padding: 15px; 
+            background: #1e1e1e; 
+            color: #33ff33; 
+            font-family: 'Consolas', 'Monaco', monospace; 
+            padding: 10px; 
             border-radius: 5px; 
             height: 300px; 
             overflow-y: auto; 
             white-space: pre-wrap; 
             word-wrap: break-word;
-            font-size: 12px;
-            line-height: 1.3;
+            font-size: 13px;
+            line-height: 1.4;
             border: 1px solid #333;
-            box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.7);
+        }
+        .terminal-prompt {
+            color: #0cf;
+        }
+        .terminal-command {
+            color: #ffcc00;
+        }
+        .terminal-cursor {
+            background-color: #ccc;
+            color: #000;
+        }
+        .terminal-success {
+            color: #33ff33;
+        }
+        .terminal-warning {
+            color: #ffcc00;
+        }
+        .terminal-error {
+            color: #ff3333;
+        }
+        .terminal-info {
+            color: #33ff33;
         }
     </style>
 </head>
@@ -139,8 +161,23 @@
             </div>
             <div id="progress-message">Đang chuẩn bị...</div>
             
-            <!-- Terminal UI để hiển thị log khi cào dữ liệu -->
-            <div id="log-terminal" style="display: none; margin-top: 15px; background: #000; color: #0f0; font-family: monospace; padding: 10px; border-radius: 5px; height: 300px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word;">
+            <!-- Terminal UI để hiển thị log khi cào dữ liệu - Làm hiển thị luôn -->
+            <div id="log-terminal" style="margin-top: 15px; background: #1e1e1e; color: #33ff33; font-family: 'Consolas', 'Monaco', monospace; padding: 10px; border-radius: 5px; height: 300px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; font-size: 13px; line-height: 1.4; border: 1px solid #333; box-shadow: inset 0 0 10px rgba(0,0,0,0.7);">
+            <span class="terminal-prompt" style="color: #0cf;">$ </span><span class="terminal-command" style="color: #ffcc00;">crawler --start</span>
+            <span style="color: #33ff33;">Khởi động công cụ cào dữ liệu...</span>
+            </div>
+            
+            <!-- Terminal mới riêng cho codienhaiau -->
+            <div class="card mt-3 bg-dark">
+                <div class="card-header text-light d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-terminal"></i> Terminal Live</span>
+                    <button id="clear-both-terminal" class="btn btn-sm btn-outline-light">Clear</button>
+                </div>
+                <div class="card-body p-0">
+                    <div id="codienhaiau-terminal" class="bg-dark text-light font-monospace p-3" style="height: 300px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; font-size: 12px; line-height: 1.3; border: 1px solid #333; box-shadow: inset 0 0 10px rgba(0,0,0,0.5); border-radius: 0;">
+                        <div class="text-success">Terminal đã được xóa. Sẵn sàng cào dữ liệu...</div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -874,43 +911,23 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                 <div class="form-container">
                     <h4 class="mb-3">Cào dữ liệu sản phẩm từ Codienhaiau.com</h4>
                     
-                    <div class="data-format">
-                        <h5>Thông tin về chức năng</h5>
-                        <p>Chức năng này cho phép cào dữ liệu từ trang web Codienhaiau.com, bao gồm:</p>
-                        <ol>
-                            <li>Tự động tìm và xử lý tất cả các danh mục con từ danh mục chính</li>
-                            <li>Thu thập thông tin của tất cả sản phẩm từ mỗi danh mục</li>
-                            <li>Trích xuất đầy đủ các thông tin:</li>
-                            <ul>
-                                <li><strong>Tên sản phẩm</strong>: Từ thẻ h1.product_title.entry-title</li>
-                                <li><strong>Mã sản phẩm</strong>: Từ phần SKU trong mô tả sản phẩm</li>
-                                <li><strong>Giá</strong>: Từ thẻ span.woocommerce-Price-amount</li>
-                                <li><strong>Thông số kỹ thuật</strong>: Từ bảng thông số kỹ thuật</li>
-                            </ul>
-                            <li>Tổ chức dữ liệu theo cấu trúc danh mục và lưu thành các file Excel</li>
-                        </ol>
-                        <div class="alert alert-info mt-3">
-                            <i class="bi bi-info-circle-fill me-2"></i> <strong>Ưu điểm:</strong> Chức năng này tự động phân tích cấu trúc danh mục của website và tổ chức kết quả theo cấu trúc tương ứng, giúp dễ dàng quản lý dữ liệu thu thập được.
-                        </div>
-                    </div>
-                    
                     <div class="steps">
                         <div class="step">
                             <p>Nhập danh sách các URL danh mục chính từ Codienhaiau.com (mỗi URL trên một dòng)</p>
                             <p class="text-muted">Ví dụ: https://codienhaiau.com/category/keyence/cam-bien-keyence/</p>
                         </div>
                         <div class="step">
-                            <p>Hệ thống sẽ tự động tìm các danh mục con và thu thập tất cả sản phẩm</p>
+                            <p>Nhấn nút "Cào dữ liệu" để bắt đầu quá trình</p>
                         </div>
                         <div class="step">
-                            <p>Tải xuống file ZIP chứa toàn bộ dữ liệu đã được tổ chức theo danh mục</p>
+                            <p>Theo dõi tiến trình cào dữ liệu trực tiếp trong terminal</p>
                         </div>
                     </div>
-
+                    
                     <form action="{{ url_for('main.crawl_codienhaiau') }}" method="post" enctype="multipart/form-data" id="codienhaiau-crawler-form">
                         <div class="mb-3">
-                            <label for="codienhaiau_urls" class="form-label">Danh sách các URL danh mục Codienhaiau.com (mỗi URL trên một dòng):</label>
-                            <textarea id="codienhaiau_urls" name="category_urls" class="form-control" rows="10" required placeholder="Nhập URL danh mục Codienhaiau.com vào đây...
+                            <label for="codienhaiau_urls" class="form-label">Danh sách các URL danh mục Codienhaiau.com:</label>
+                            <textarea id="codienhaiau_urls" name="category_urls" class="form-control" rows="5" required placeholder="Nhập URL danh mục Codienhaiau.com vào đây... (mỗi URL một dòng)
 Ví dụ: https://codienhaiau.com/category/keyence/cam-bien-keyence/"></textarea>
                         </div>
                         
@@ -948,30 +965,113 @@ Ví dụ: https://codienhaiau.com/category/keyence/cam-bien-keyence/"></textarea
             
             // Hiển thị log trong terminal UI nếu có
             if (data.log) {
+                // Hiển thị trong terminal UI cũ
                 const logTerminal = document.getElementById('log-terminal');
                 if (logTerminal) {
-                    logTerminal.style.display = 'block';
-                    // Thêm dòng log mới và chuyển đổi các dấu xuống dòng thành <br>
-                    logTerminal.innerHTML += data.log + '<br>';
+                    // Định dạng log để hiển thị đẹp hơn
+                    const formattedLog = formatTerminalOutput(data.log);
+                    
+                    // Thêm dòng log mới
+                    const logContent = logTerminal.innerHTML;
+                    // Xóa con trỏ nháy cuối cùng nếu có
+                    const newContent = logContent.replace(/<span class="terminal-cursor"[^>]*>_<\/span>/, '');
+                    // Thêm log mới và con trỏ nháy
+                    logTerminal.innerHTML = newContent + formattedLog + '<br><span class="terminal-cursor" style="background-color: #ccc; color: #000;">_</span>';
+                    
                     // Cuộn xuống dưới cùng để hiển thị log mới nhất
                     logTerminal.scrollTop = logTerminal.scrollHeight;
+                }
+                
+                // Hiển thị trong terminal mới cho Codienhaiau - Bỏ điều kiện chỉ hiển thị khi tab được chọn
+                const codienhaiau_terminal = document.getElementById('codienhaiau-terminal');
+                if (codienhaiau_terminal) {
+                    // Phân loại log theo trạng thái để hiển thị màu khác nhau
+                    let formattedLog = formatTerminalOutput(data.log);
+                    
+                    // Xóa con trỏ nháy cuối cùng nếu có
+                    const contentWithoutCursor = codienhaiau_terminal.innerHTML.replace(/<span class="terminal-cursor"[^>]*>_<\/span>/, '');
+                    
+                    // Thêm dòng log mới với định dạng và con trỏ nháy
+                    codienhaiau_terminal.innerHTML = contentWithoutCursor + formattedLog + '<br><span class="terminal-cursor" style="background-color: #ccc; color: #000;">_</span>';
+                    
+                    // Cuộn xuống dưới cùng để hiển thị log mới nhất
+                    codienhaiau_terminal.scrollTop = codienhaiau_terminal.scrollHeight;
                 }
             }
             
             // Nếu hoàn thành, xử lý kết thúc sau một khoảng thời gian
             if (data.percent === 100) {
                 setTimeout(function() {
-                    // Giữ terminal hiển thị để người dùng có thể đọc kết quả cuối cùng
-                    setTimeout(function() {
-                        // Ẩn thanh tiến trình sau 15 giây
-                        //progressContainer.style.display = 'none';
-                        // Reset terminal log chỉ khi người dùng yêu cầu
-                        //document.getElementById('log-terminal').innerHTML = '';
-                        //document.getElementById('log-terminal').style.display = 'none';
-                    }, 15000);
+                    // Hiển thị thông báo hoàn thành với định dạng đẹp
+                    const logTerminal = document.getElementById('log-terminal');
+                    const codienhaiau_terminal = document.getElementById('codienhaiau-terminal');
+                    
+                    if (logTerminal) {
+                        // Xóa con trỏ nháy cuối cùng nếu có
+                        const contentWithoutCursor = logTerminal.innerHTML.replace(/<span class="terminal-cursor"[^>]*>_<\/span>/, '');
+                        logTerminal.innerHTML = contentWithoutCursor + '<br><span class="terminal-success">[HOÀN THÀNH] Quá trình thu thập dữ liệu đã kết thúc.</span><br><span class="terminal-prompt" style="color: #0cf;">$ </span><span class="terminal-cursor" style="background-color: #ccc; color: #000;">_</span>';
+                        logTerminal.scrollTop = logTerminal.scrollHeight;
+                    }
+                    
+                    if (codienhaiau_terminal) {
+                        // Xóa con trỏ nháy cuối cùng nếu có
+                        const contentWithoutCursor = codienhaiau_terminal.innerHTML.replace(/<span class="terminal-cursor"[^>]*>_<\/span>/, '');
+                        codienhaiau_terminal.innerHTML = contentWithoutCursor + '<br><span class="terminal-success">[HOÀN THÀNH] Quá trình thu thập dữ liệu đã kết thúc.</span><br><span class="terminal-prompt" style="color: #0cf;">$ </span><span class="terminal-cursor" style="background-color: #ccc; color: #000;">_</span>';
+                        codienhaiau_terminal.scrollTop = codienhaiau_terminal.scrollHeight;
+                    }
                 }, 1000);
             }
         });
+
+        // Thêm sự kiện clear cho terminal
+        document.getElementById('clear-terminal').addEventListener('click', function() {
+            const codienhaiau_terminal = document.getElementById('codienhaiau-terminal');
+            if (codienhaiau_terminal) {
+                codienhaiau_terminal.innerHTML = '<div class="text-success">Terminal đã được xóa. Sẵn sàng cào dữ liệu...</div>';
+            }
+        });
+        
+        // Thêm sự kiện clear cho nút clear-both-terminal 
+        document.getElementById('clear-both-terminal').addEventListener('click', function() {
+            // Xóa terminal codienhaiau
+            const codienhaiau_terminal = document.getElementById('codienhaiau-terminal');
+            if (codienhaiau_terminal) {
+                codienhaiau_terminal.innerHTML = '<span style="color: #0cf;">$ </span><span style="color: #ffcc00;">codienhaiau-crawler --init</span><div class="text-success">Terminal đã được xóa. Sẵn sàng cào dữ liệu...</div><span class="terminal-cursor" style="background-color: #ccc; color: #000;">_</span>';
+            }
+            
+            // Xóa terminal cũ
+            const logTerminal = document.getElementById('log-terminal');
+            if (logTerminal) {
+                logTerminal.innerHTML = '<span class="terminal-prompt" style="color: #0cf;">$ </span><span class="terminal-command" style="color: #ffcc00;">crawler --start</span><br><span style="color: #33ff33;">Terminal đã được xóa. Sẵn sàng cào dữ liệu...</span><span class="terminal-cursor" style="background-color: #ccc; color: #000;">_</span>';
+            }
+        });
+
+        // Chức năng để làm nhấp nháy con trỏ terminal
+        setInterval(function() {
+            const cursors = document.querySelectorAll('.terminal-cursor');
+            for (let i = 0; i < cursors.length; i++) {
+                if (cursors[i].style.visibility === 'hidden') {
+                    cursors[i].style.visibility = 'visible';
+                } else {
+                    cursors[i].style.visibility = 'hidden';
+                }
+            }
+        }, 500); // Nhấp nháy mỗi 500ms
+
+        // Hàm định dạng output terminal để làm cho nó trông giống terminal IDE thực tế
+        function formatTerminalOutput(log) {
+            if (log.includes('[THÀNH CÔNG]') || log.includes('[OK]')) {
+                return '<span class="terminal-success">' + log + '</span>';
+            } else if (log.includes('[LỖI]') || log.includes('[CẢNH BÁO]')) {
+                return '<span class="terminal-error">' + log + '</span>';
+            } else if (log.includes('[PHÂN TÍCH]') || log.includes('[THÔNG TIN]')) {
+                return '<span class="terminal-info">' + log + '</span>';
+            } else if (log.includes('[CRAWLER]')) {
+                return '<span class="terminal-command">' + log + '</span>';
+            } else {
+                return '<span class="terminal-output">' + log + '</span>';
+            }
+        }
 
         // Hiển thị tên file khi người dùng chọn file
         document.getElementById('link_file').addEventListener('change', function(e) {
@@ -1193,10 +1293,19 @@ Ví dụ: https://codienhaiau.com/category/keyence/cam-bien-keyence/"></textarea
                 const progressMessage = document.getElementById('progress-message');
                 progressMessage.innerText = 'Đang chuẩn bị cào dữ liệu từ Codienhaiau.com...';
                 
-                // Hiển thị và reset terminal log UI
+                // Xóa và hiển thị terminal
+                const codienhaiau_terminal = document.getElementById('codienhaiau-terminal');
+                codienhaiau_terminal.innerHTML = '<span class="terminal-prompt" style="color: #0cf;">$ </span><span class="terminal-command" style="color: #ffcc00;">codienhaiau-crawler --start</span><br>';
+                codienhaiau_terminal.innerHTML += '<span class="terminal-success">[KHỞI ĐỘNG] Quá trình cào dữ liệu từ Codienhaiau.com bắt đầu...</span><br>';
+                codienhaiau_terminal.innerHTML += '<span class="terminal-info">[TIẾN TRÌNH] Đang phân tích URL danh mục...</span><br>';
+                codienhaiau_terminal.innerHTML += '<span class="terminal-cursor" style="background-color: #ccc; color: #000;">_</span>';
+                
+                // Hiển thị và reset terminal cũ
                 const logTerminal = document.getElementById('log-terminal');
-                logTerminal.style.display = 'block';
-                logTerminal.innerHTML = 'Khởi động quá trình cào dữ liệu từ Codienhaiau.com...<br>';
+                logTerminal.innerHTML = '<span class="terminal-prompt" style="color: #0cf;">$ </span><span class="terminal-command" style="color: #ffcc00;">crawler --verbose</span><br>';
+                logTerminal.innerHTML += '<span class="terminal-success">[KHỞI ĐỘNG] Quá trình cào dữ liệu từ Codienhaiau.com bắt đầu...</span><br>';
+                logTerminal.innerHTML += '<span class="terminal-info">[THÔNG TIN] Đang tải trang danh mục...</span><br>';
+                logTerminal.innerHTML += '<span class="terminal-cursor" style="background-color: #ccc; color: #000;">_</span>';
             }
         });
     </script>
