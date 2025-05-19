@@ -1258,44 +1258,6 @@ class CategoryCrawler:
             traceback.print_exc()
             return False, f'Lỗi: {error_message}', None
             
-    def _get_max_pages_for_category(self, category_url):
-        """Xác định số trang tối đa dựa trên URL danh mục"""
-        category_lower = category_url.lower()
-        
-        # Giá trị mặc định cho số trang
-        default_pages = 15
-        
-        # Xác định số trang dựa trên danh mục cụ thể và số lượng sản phẩm
-        # Mỗi trang có 50 sản phẩm, cộng thêm thêm 2 trang dự phòng
-        category_pages = {
-            'bo-dieu-khien-nhiet-do-autonics': 30,  # 1412 sản phẩm, 50/trang = 29 trang
-            'cam-bien-autonics': 52,                # 2576 sản phẩm, 50/trang = 52 trang
-            'dong-ho-do-autonics': 12,              # 483 sản phẩm, 50/trang = 10 trang
-            'bo-chuyen-doi-tin-hieu-autonics': 3,   # 33 sản phẩm
-            'encoder-autonics': 12,                 # 500 sản phẩm, 50/trang = 10 trang
-            'timer-autonics': 5,                    # 141 sản phẩm, 50/trang = 3 trang
-            'bo-dem-autonics': 4,                   # 82 sản phẩm, 50/trang = 2 trang
-            'bo-nguon-autonics': 3,                 # 33 sản phẩm
-            'ro-le-ban-dan-autonics': 6,            # 200 sản phẩm, 50/trang = 4 trang
-            'hmi-autonics': 2,                      # 30 sản phẩm
-            'bo-dieu-khien-nguon-autonics': 5,      # 150 sản phẩm, 50/trang = 3 trang
-            'cam-bien-muc-nuoc-autonics': 2,        # 2 sản phẩm
-            'bo-hien-thi-so-autonics': 4,           # 73 sản phẩm, 50/trang = 2 trang
-            'phu-kien-autonics': 2,                 # 3 sản phẩm
-            'servo-autonics': 6,                    # 200 sản phẩm, 50/trang = 4 trang
-            'bo-ghi-du-lieu-autonics': 4,           # 78 sản phẩm, 50/trang = 2 trang
-            'cau-dau-day-dien-autonics': 2,         # 21 sản phẩm
-        }
-        
-        # Tìm tên danh mục phù hợp
-        for category_name, pages in category_pages.items():
-            if category_name in category_lower:
-                log_and_emit(f"[THÔNG TIN] Áp dụng giới hạn {pages} trang cho danh mục {category_name}")
-                return pages
-        
-        # Nếu không tìm thấy danh mục cụ thể, trả về giá trị mặc định
-        return default_pages
-
     def _get_soup(self, url):
         """Lấy nội dung trang web và trả về đối tượng BeautifulSoup với retry logic"""
         headers = {
@@ -1741,3 +1703,85 @@ class CategoryCrawler:
             log_and_emit(f"[LỖI] Lỗi khi trích xuất liên kết từ {current_url}: {str(e)}")
             traceback.print_exc()
             return list(product_urls)
+
+    def _get_max_pages_for_category(self, category_url):
+        """Xác định số trang tối đa dựa trên URL danh mục"""
+        category_lower = category_url.lower()
+        
+        # Giá trị mặc định cho số trang
+        default_pages = 15
+        
+        # Xác định số trang dựa trên danh mục cụ thể và số lượng sản phẩm
+        # Mỗi trang có 50 sản phẩm, cộng thêm thêm 2 trang dự phòng
+        category_pages = {
+            'bo-dieu-khien-nhiet-do-autonics': 30,  # 1412 sản phẩm, 50/trang = 29 trang
+            'cam-bien-autonics': 52,                # 2576 sản phẩm, 50/trang = 52 trang
+            'dong-ho-do-autonics': 12,              # 483 sản phẩm, 50/trang = 10 trang
+            'bo-chuyen-doi-tin-hieu-autonics': 3,   # 33 sản phẩm
+            'encoder-autonics': 12,                 # 500 sản phẩm, 50/trang = 10 trang
+            'timer-autonics': 5,                    # 141 sản phẩm, 50/trang = 3 trang
+            'bo-dem-autonics': 4,                   # 82 sản phẩm, 50/trang = 2 trang
+            'bo-nguon-autonics': 3,                 # 33 sản phẩm
+            'ro-le-ban-dan-autonics': 6,            # 200 sản phẩm, 50/trang = 4 trang
+            'hmi-autonics': 2,                      # 30 sản phẩm
+            'bo-dieu-khien-nguon-autonics': 16,     # 752 sản phẩm, 50/trang = 16 trang (cập nhật từ count widget)
+            'cam-bien-muc-nuoc-autonics': 2,        # 2 sản phẩm
+            'bo-hien-thi-so-autonics': 4,           # 73 sản phẩm, 50/trang = 2 trang
+            'phu-kien-autonics': 2,                 # 3 sản phẩm
+            'servo-autonics': 6,                    # 200 sản phẩm, 50/trang = 4 trang
+            'bo-ghi-du-lieu-autonics': 4,           # 78 sản phẩm, 50/trang = 2 trang
+            'cau-dau-day-dien-autonics': 2,         # 21 sản phẩm
+        }
+        
+        # Thử tải trang và trích xuất số lượng sản phẩm từ widget bộ lọc
+        try:
+            # Tải trang danh mục
+            soup = self._get_soup(category_url)
+            if soup:
+                # Tìm tất cả các phần tử span.count
+                count_elements = soup.select('span.count')
+                max_count = 0
+                
+                for count_element in count_elements:
+                    # Trích xuất số từ trong dấu ngoặc, ví dụ "(752)" -> 752
+                    count_text = count_element.get_text().strip()
+                    count_match = re.search(r'\((\d+)\)', count_text)
+                    if count_match:
+                        count = int(count_match.group(1))
+                        # Tìm phần tử cha có chứa thương hiệu
+                        parent_li = count_element.find_parent('li')
+                        if parent_li:
+                            link_element = parent_li.find('a')
+                            if link_element and 'autonics' in link_element.get_text().lower():
+                                # Ưu tiên sử dụng số lượng từ bộ lọc thương hiệu autonics
+                                log_and_emit(f"[THÔNG TIN] Tìm thấy số lượng sản phẩm từ widget thương hiệu: {count}")
+                                if count > max_count:
+                                    max_count = count
+                
+                # Nếu tìm thấy số lượng từ widget, tính số trang dựa trên đó
+                if max_count > 0:
+                    calculated_pages = math.ceil(max_count / 50) + 1  # Thêm 1 trang dự phòng
+                    log_and_emit(f"[THÔNG TIN] Số trang tính từ widget bộ lọc ({max_count} sản phẩm): {calculated_pages}")
+                    
+                    # Kết hợp với giá trị từ cài đặt
+                    # Tìm tên danh mục phù hợp
+                    for category_name, default_page_count in category_pages.items():
+                        if category_name in category_lower:
+                            # Sử dụng giá trị lớn hơn giữa số trang tính toán và cài đặt
+                            pages_to_use = max(calculated_pages, default_page_count)
+                            log_and_emit(f"[THÔNG TIN] Áp dụng giới hạn {pages_to_use} trang cho danh mục {category_name}")
+                            return pages_to_use
+                    
+                    # Nếu không tìm thấy danh mục trong cài đặt, sử dụng số trang tính toán
+                    return calculated_pages
+        except Exception as e:
+            log_and_emit(f"[CẢNH BÁO] Lỗi khi phân tích số trang từ widget bộ lọc: {str(e)}")
+        
+        # Nếu không thể tính toán từ widget hoặc có lỗi, sử dụng giá trị từ cài đặt
+        for category_name, pages in category_pages.items():
+            if category_name in category_lower:
+                log_and_emit(f"[THÔNG TIN] Áp dụng giới hạn {pages} trang cho danh mục {category_name}")
+                return pages
+        
+        # Nếu không tìm thấy danh mục cụ thể, trả về giá trị mặc định
+        return default_pages
