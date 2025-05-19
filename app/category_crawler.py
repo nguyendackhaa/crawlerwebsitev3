@@ -9,6 +9,7 @@ import concurrent.futures
 import threading
 import queue
 import time
+import math
 from datetime import datetime
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
@@ -1262,27 +1263,28 @@ class CategoryCrawler:
         category_lower = category_url.lower()
         
         # Giá trị mặc định cho số trang
-        default_pages = 10
+        default_pages = 15
         
-        # Xác định số trang dựa trên danh mục cụ thể
+        # Xác định số trang dựa trên danh mục cụ thể và số lượng sản phẩm
+        # Mỗi trang có 50 sản phẩm, cộng thêm thêm 2 trang dự phòng
         category_pages = {
-            'bo-dieu-khien-nhiet-do-autonics': 30,  # 1417 sản phẩm, 50/trang = ~29 trang
-            'cam-bien-autonics': 20,                # 950 sản phẩm, 50/trang = ~19 trang
-            'dong-ho-do-autonics': 15,              # 600 sản phẩm, 50/trang = ~12 trang
-            'bo-chuyen-doi-tin-hieu-autonics': 5,   # ~200 sản phẩm
-            'encoder-autonics': 10,                 # ~450 sản phẩm
-            'timer-autonics': 5,                    # ~200 sản phẩm
-            'bo-dem-autonics': 5,                   # ~200 sản phẩm
-            'bo-nguon-autonics': 3,                 # ~100 sản phẩm
-            'ro-le-ban-dan-autonics': 4,            # ~150 sản phẩm
-            'hmi-autonics': 3,                      # ~100 sản phẩm
-            'bo-dieu-khien-nguon-autonics': 3,      # ~100 sản phẩm 
-            'cam-bien-muc-nuoc-autonics': 2,        # ~50 sản phẩm
-            'bo-hien-thi-so-autonics': 5,           # ~200 sản phẩm
-            'phu-kien-autonics': 4,                 # ~150 sản phẩm
-            'servo-autonics': 4,                    # ~150 sản phẩm
-            'bo-ghi-du-lieu-autonics': 2,           # ~50 sản phẩm
-            'cau-dau-day-dien-autonics': 2,         # ~50 sản phẩm
+            'bo-dieu-khien-nhiet-do-autonics': 30,  # 1412 sản phẩm, 50/trang = 29 trang
+            'cam-bien-autonics': 52,                # 2576 sản phẩm, 50/trang = 52 trang
+            'dong-ho-do-autonics': 12,              # 483 sản phẩm, 50/trang = 10 trang
+            'bo-chuyen-doi-tin-hieu-autonics': 3,   # 33 sản phẩm
+            'encoder-autonics': 12,                 # 500 sản phẩm, 50/trang = 10 trang
+            'timer-autonics': 5,                    # 141 sản phẩm, 50/trang = 3 trang
+            'bo-dem-autonics': 4,                   # 82 sản phẩm, 50/trang = 2 trang
+            'bo-nguon-autonics': 3,                 # 33 sản phẩm
+            'ro-le-ban-dan-autonics': 6,            # 200 sản phẩm, 50/trang = 4 trang
+            'hmi-autonics': 2,                      # 30 sản phẩm
+            'bo-dieu-khien-nguon-autonics': 5,      # 150 sản phẩm, 50/trang = 3 trang
+            'cam-bien-muc-nuoc-autonics': 2,        # 2 sản phẩm
+            'bo-hien-thi-so-autonics': 4,           # 73 sản phẩm, 50/trang = 2 trang
+            'phu-kien-autonics': 2,                 # 3 sản phẩm
+            'servo-autonics': 6,                    # 200 sản phẩm, 50/trang = 4 trang
+            'bo-ghi-du-lieu-autonics': 4,           # 78 sản phẩm, 50/trang = 2 trang
+            'cau-dau-day-dien-autonics': 2,         # 21 sản phẩm
         }
         
         # Tìm tên danh mục phù hợp
@@ -1351,7 +1353,7 @@ class CategoryCrawler:
             ]
             
             # Tìm kiếm các liên kết sản phẩm với các selector khác nhau
-            log_and_emit(f"[PHÂN TÍCH] Tìm kiếm sản phẩm trong trang hiện tại: {current_url}")
+            log_and_emit(f"[PHÂN TÍCH] Tìm liên kết sản phẩm với nhiều selector khác nhau")
             found_links_by_selector = {}
             for selector in product_link_selectors:
                 product_elements = soup.select(selector)
@@ -1391,7 +1393,7 @@ class CategoryCrawler:
             
             # ---------------- XỬ LÝ PHÂN TRANG ----------------
             
-            # Xác định mẫu URL cơ sở cho phân trang
+            # Xác định mẫu URL cơ sở
             base_url = current_url
             page_number = 1
             
@@ -1472,39 +1474,118 @@ class CategoryCrawler:
             else:
                 log_and_emit(f"[PHÂN TRANG] Không tìm thấy thông tin phân trang, đang tìm phương pháp khác...")
             
-            # TÌM TỔNG SỐ SẢN PHẨM - Phương pháp 2: Từ thông tin hiển thị
-            total_products = 0
-            count_text = None
+            # TÌM TỔNG SỐ SẢN PHẨM - PHƯƠNG PHÁP MỚI: Từ các widget bộ lọc (span.count)
+            count_from_widgets = 0
+            # Tìm tất cả các widget bộ lọc có thể chứa thông tin số lượng sản phẩm
+            widget_selectors = [
+                '.woocommerce-widget-layered-nav-list .count',  # Widget bộ lọc thương hiệu/thuộc tính
+                '.product-categories .count',                  # Widget danh mục
+                '.widget_layered_nav .count',                  # Widget bộ lọc tổng quát
+                '.widget_layered_nav_filters .count',          # Widget bộ lọc đã chọn
+                '.wc-layered-nav-term .count'                  # Mục bộ lọc riêng lẻ
+            ]
             
-            # Tìm các phần tử có thể chứa thông tin số lượng
-            for selector in ['.woocommerce-result-count', '.count-container', '.showing-count']:
-                element = soup.select_one(selector)
-                if element:
-                    count_text = element.text
-                    log_and_emit(f"[THÔNG TIN] Tìm thấy thông tin số lượng: '{count_text}'")
+            log_and_emit(f"[PHÂN TÍCH] Tìm thông tin số lượng sản phẩm từ widget bộ lọc...")
+            
+            # Tìm các widget bộ lọc có chứa thương hiệu của danh mục hiện tại
+            # Ví dụ: nếu URL chứa "bo-dieu-khien-nguon-autonics", tìm widget có "Autonics"
+            category_parts = current_url.split('/')
+            category_name = None
+            for part in category_parts:
+                if 'autonics' in part.lower():
+                    category_name = 'autonics'
                     break
             
-            # Phân tích văn bản để tìm tổng số sản phẩm
-            if count_text:
-                # Tìm số sản phẩm trong các định dạng khác nhau
-                patterns = [
-                    r'(\d+[\.,]?\d*)\s*(?:sản phẩm|kết quả|products|results)',  # Định dạng thông thường
-                    r'Hiển thị\s+\d+\s*\-\s*\d+\s*trong\s+(\d+[\.,]?\d*)',      # "Hiển thị x - y trong N sản phẩm"
-                    r'Showing\s+\d+\s*\-\s*\d+\s*of\s+(\d+[\.,]?\d*)',         # "Showing x - y of N products" 
-                    r'(\d+[\.,]?\d*)\s*(?:items|sản phẩm)'                      # "N items/sản phẩm"
+            if category_name:
+                log_and_emit(f"[THÔNG TIN] Đang tìm widget bộ lọc cho thương hiệu: {category_name}")
+                
+                # Tìm tất cả các widget bộ lọc
+                for selector in widget_selectors:
+                    count_elements = soup.select(selector)
+                    for count_element in count_elements:
+                        # Kiểm tra xem widget này có liên quan đến danh mục hiện tại không
+                        parent_li = count_element.find_parent('li')
+                        if parent_li:
+                            link_element = parent_li.find('a')
+                            if link_element and category_name in link_element.get_text().lower():
+                                # Trích xuất số trong dấu ngoặc, ví dụ: "(752)" -> 752
+                                count_text = count_element.get_text().strip()
+                                count_match = re.search(r'\((\d+)\)', count_text)
+                                if count_match:
+                                    widget_count = int(count_match.group(1))
+                                    log_and_emit(f"[THÀNH CÔNG] Tìm thấy số lượng sản phẩm từ widget bộ lọc: {widget_count} (từ {count_text})")
+                                    if widget_count > count_from_widgets:
+                                        count_from_widgets = widget_count
+            
+            # Nếu không tìm thấy theo thương hiệu cụ thể, tìm tổng số sản phẩm từ bất kỳ widget nào
+            if count_from_widgets == 0:
+                # Tìm tất cả các phần tử span.count
+                all_count_elements = soup.select('span.count')
+                if all_count_elements:
+                    log_and_emit(f"[THÔNG TIN] Tìm thấy {len(all_count_elements)} phần tử có class 'count'")
+                    
+                    for count_element in all_count_elements:
+                        count_text = count_element.get_text().strip()
+                        count_match = re.search(r'\((\d+)\)', count_text)
+                        if count_match:
+                            widget_count = int(count_match.group(1))
+                            log_and_emit(f"[THÔNG TIN] Phát hiện số lượng từ widget: {widget_count} (từ {count_text})")
+                            if widget_count > count_from_widgets:
+                                count_from_widgets = widget_count
+                                
+            # TÌM TỔNG SỐ SẢN PHẨM - Phương pháp 2: Từ thẻ có chứa tổng số sản phẩm
+            total_products = 0
+            
+            # Nếu tìm được từ widget, sử dụng giá trị đó
+            if count_from_widgets > 0:
+                total_products = count_from_widgets
+                log_and_emit(f"[THÀNH CÔNG] Sử dụng số lượng sản phẩm từ widget bộ lọc: {total_products}")
+            else:
+                # Các selector thường chứa thông tin về tổng số sản phẩm
+                product_count_selectors = [
+                    '.woocommerce-result-count',
+                    '.products-count',
+                    '.showing-count',
+                    '.product-count',
+                    '.result-count'
                 ]
                 
-                for pattern in patterns:
-                    matches = re.search(pattern, count_text, re.IGNORECASE)
-                    if matches:
-                        # Xử lý chuỗi số có dấu phân cách
-                        num_str = matches.group(1).replace('.', '').replace(',', '')
-                        try:
-                            total_products = int(num_str)
-                            log_and_emit(f"[THÀNH CÔNG] Phát hiện tổng số sản phẩm: {total_products}")
-                            break
-                        except ValueError:
-                            log_and_emit(f"[LỖI] Không thể chuyển đổi '{num_str}' thành số nguyên")
+                log_and_emit(f"[PHÂN TÍCH] Tìm thông tin tổng số sản phẩm từ thẻ hiển thị số lượng...")
+                
+                for selector in product_count_selectors:
+                    count_elements = soup.select(selector)
+                    if count_elements:
+                        for element in count_elements:
+                            text = element.get_text().strip()
+                            log_and_emit(f"[THÔNG TIN] Tìm thấy phần tử '{selector}': {text}")
+                            
+                            # Tìm số từ văn bản (có thể có nhiều dạng khác nhau)
+                            # VD: "Hiển thị 1–50 trong số 141 kết quả"
+                            # VD: "Showing 1-50 of 141 results"
+                            # VD: "141 products"
+                            
+                            # Thử tìm mẫu "X–Y trong số Z"
+                            total_match = re.search(r'trong số (\d+)', text)
+                            if total_match:
+                                total_products = int(total_match.group(1))
+                                log_and_emit(f"[THÀNH CÔNG] Tìm thấy tổng số sản phẩm (vi): {total_products}")
+                                break
+                                
+                            # Thử tìm mẫu "X-Y of Z"
+                            total_match = re.search(r'of (\d+)', text)
+                            if total_match:
+                                total_products = int(total_match.group(1))
+                                log_and_emit(f"[THÀNH CÔNG] Tìm thấy tổng số sản phẩm (en): {total_products}")
+                                break
+                                
+                            # Thử tìm mẫu chỉ có một số
+                            total_match = re.search(r'^(\d+)', text)
+                            if total_match:
+                                total_products = int(total_match.group(1))
+                                log_and_emit(f"[THÀNH CÔNG] Tìm thấy tổng số sản phẩm (simple): {total_products}")
+                                break
+                    if total_products > 0:
+                        break
             
             # TÌM TỔNG SỐ SẢN PHẨM - Phương pháp 3: Tìm từ các phần tử HTML khác
             if total_products == 0:
@@ -1534,6 +1615,15 @@ class CategoryCrawler:
             
             # LẤY SỐ TRANG TỐI ĐA từ cài đặt cho danh mục
             max_pages_setting = self._get_max_pages_for_category(current_url)
+            
+            # Nếu tổng số sản phẩm > 0, tính số trang dựa trên số sản phẩm (50 sản phẩm/trang)
+            if total_products > 0:
+                calculated_pages = math.ceil(total_products / 50)
+                log_and_emit(f"[PHÂN TRANG] Số trang tính từ tổng số sản phẩm ({total_products}): {calculated_pages}")
+                # Sử dụng giá trị lớn nhất giữa số trang tính toán và số trang đã tìm
+                if calculated_pages > max_page:
+                    max_page = calculated_pages
+                    log_and_emit(f"[PHÂN TRANG] Cập nhật số trang tối đa thành {max_page}")
             
             # Nếu số trang tìm được nhỏ hơn cài đặt, sử dụng giá trị lớn hơn
             if max_page < max_pages_setting:
@@ -1593,7 +1683,7 @@ class CategoryCrawler:
                             log_and_emit(f"[LỖI] Không thể tải trang {page_url} sau {self.max_retries} lần thử")
                             continue
                         
-                        # Trích xuất sản phẩm từ trang
+                        # Trích xuất sản phẩm từ trang này
                         page_products_found = 0
                         page_product_urls = set()
                         
@@ -1650,4 +1740,4 @@ class CategoryCrawler:
         except Exception as e:
             log_and_emit(f"[LỖI] Lỗi khi trích xuất liên kết từ {current_url}: {str(e)}")
             traceback.print_exc()
-            return []
+            return list(product_urls)
