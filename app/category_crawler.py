@@ -1177,7 +1177,18 @@ class CategoryCrawler:
                     # Thu thập liên kết sản phẩm từ danh mục này
                     emit_progress(category_progress_base + 5, f'Đang thu thập liên kết sản phẩm từ danh mục: {category_name}')
                     
-                    category_products = self._extract_codienhaiau_links(self._get_soup(category_url), category_url)
+                    # Lấy tổng số trang dựa trên danh mục cụ thể
+                    max_pages = self._get_max_pages_for_category(category_url)
+                    log_and_emit(f"[THÔNG TIN] Danh mục {category_name} có ước tính {max_pages} trang")
+                    
+                    # Thu thập liên kết từ trang đầu tiên để xác định cấu trúc phân trang
+                    initial_soup = self._get_soup(category_url)
+                    if not initial_soup:
+                        log_and_emit(f"[LỖI] Không thể tải trang đầu tiên của danh mục {category_name}")
+                        continue
+                    
+                    # Thu thập tất cả sản phẩm (bao gồm cả phân trang)
+                    category_products = self._extract_codienhaiau_links(initial_soup, category_url)
                     
                     if category_products:
                         # Lưu các liên kết sản phẩm vào file txt
@@ -1193,10 +1204,14 @@ class CategoryCrawler:
                             'Số sản phẩm': len(category_products),
                             'Số sản phẩm có thông tin': len(product_info_list)
                         })
+                        
+                        log_and_emit(f"[THÀNH CÔNG] Đã thu thập {len(category_products)} sản phẩm từ danh mục {category_name}")
                     else:
+                        log_and_emit(f"[CẢNH BÁO] Không tìm thấy sản phẩm nào trong danh mục: {category_url}")
                         print(f"Không tìm thấy sản phẩm nào trong danh mục: {category_url}")
                         
                 except Exception as e:
+                    log_and_emit(f"[LỖI] Khi xử lý danh mục {category_url}: {str(e)}")
                     print(f"Lỗi khi xử lý danh mục {category_url}: {str(e)}")
                     traceback.print_exc()
             
@@ -1241,6 +1256,43 @@ class CategoryCrawler:
             error_message = str(e)
             traceback.print_exc()
             return False, f'Lỗi: {error_message}', None
+            
+    def _get_max_pages_for_category(self, category_url):
+        """Xác định số trang tối đa dựa trên URL danh mục"""
+        category_lower = category_url.lower()
+        
+        # Giá trị mặc định cho số trang
+        default_pages = 10
+        
+        # Xác định số trang dựa trên danh mục cụ thể
+        category_pages = {
+            'bo-dieu-khien-nhiet-do-autonics': 30,  # 1417 sản phẩm, 50/trang = ~29 trang
+            'cam-bien-autonics': 20,                # 950 sản phẩm, 50/trang = ~19 trang
+            'dong-ho-do-autonics': 15,              # 600 sản phẩm, 50/trang = ~12 trang
+            'bo-chuyen-doi-tin-hieu-autonics': 5,   # ~200 sản phẩm
+            'encoder-autonics': 10,                 # ~450 sản phẩm
+            'timer-autonics': 5,                    # ~200 sản phẩm
+            'bo-dem-autonics': 5,                   # ~200 sản phẩm
+            'bo-nguon-autonics': 3,                 # ~100 sản phẩm
+            'ro-le-ban-dan-autonics': 4,            # ~150 sản phẩm
+            'hmi-autonics': 3,                      # ~100 sản phẩm
+            'bo-dieu-khien-nguon-autonics': 3,      # ~100 sản phẩm 
+            'cam-bien-muc-nuoc-autonics': 2,        # ~50 sản phẩm
+            'bo-hien-thi-so-autonics': 5,           # ~200 sản phẩm
+            'phu-kien-autonics': 4,                 # ~150 sản phẩm
+            'servo-autonics': 4,                    # ~150 sản phẩm
+            'bo-ghi-du-lieu-autonics': 2,           # ~50 sản phẩm
+            'cau-dau-day-dien-autonics': 2,         # ~50 sản phẩm
+        }
+        
+        # Tìm tên danh mục phù hợp
+        for category_name, pages in category_pages.items():
+            if category_name in category_lower:
+                log_and_emit(f"[THÔNG TIN] Áp dụng giới hạn {pages} trang cho danh mục {category_name}")
+                return pages
+        
+        # Nếu không tìm thấy danh mục cụ thể, trả về giá trị mặc định
+        return default_pages
 
     def _get_soup(self, url):
         """Lấy nội dung trang web và trả về đối tượng BeautifulSoup với retry logic"""
@@ -1337,6 +1389,8 @@ class CategoryCrawler:
             if selector_summary:
                 log_and_emit(f"[THÔNG TIN] Phân tích selector sản phẩm:\n{selector_summary.rstrip()}")
             
+            # ---------------- XỬ LÝ PHÂN TRANG ----------------
+            
             # Xác định mẫu URL cơ sở cho phân trang
             base_url = current_url
             page_number = 1
@@ -1350,20 +1404,22 @@ class CategoryCrawler:
                 log_and_emit(f"[PHÂN TRANG] Đang ở trang {page_number}, URL cơ sở: {base_url}")
             
             # Đảm bảo base_url không có tham số truy vấn
-            base_url = base_url.split('?')[0]
+            if '?' in base_url:
+                base_url = base_url.split('?')[0]
+            
+            # Đảm bảo base_url kết thúc bằng '/'
+            if not base_url.endswith('/'):
+                base_url += '/'
             
             # Tạo mẫu URL cho phân trang
-            if base_url.endswith('/'):
-                page_url_template = f"{base_url}page/{{0}}/"
-            else:
-                page_url_template = f"{base_url}/page/{{0}}/"
+            page_url_template = f"{base_url}page/{{0}}/"
             
             log_and_emit(f"[PHÂN TRANG] Mẫu URL phân trang: {page_url_template}")
             
-            # TÌM TỔNG SỐ SẢN PHẨM - Phương pháp 1: Từ phân trang
+            # TÌM TỔNG SỐ TRANG - Phương pháp 1: Từ các liên kết phân trang
             max_page = 1
             
-            # Tìm phân trang
+            # Tìm phân trang với các selector khác nhau
             pagination_selectors = [
                 '.woocommerce-pagination a.page-numbers', 
                 '.woocommerce-pagination a.next',
@@ -1371,24 +1427,44 @@ class CategoryCrawler:
                 '.nav-pagination a',
                 'ul.page-numbers a',
                 '.pagination a',
-                '.load-more-button'
+                '.load-more-button',
+                'a.next.page-numbers',
+                'a.prev.page-numbers',
+                'a.page-number'
             ]
             
             log_and_emit(f"[PHÂN TRANG] Đang tìm liên kết phân trang...")
             
+            pagination_links_found = False
             for selector in pagination_selectors:
                 pagination_links = soup.select(selector)
                 if pagination_links:
+                    pagination_links_found = True
                     log_and_emit(f"[THÀNH CÔNG] Tìm thấy {len(pagination_links)} liên kết phân trang với selector '{selector}'")
                 
-                for link in pagination_links:
-                    href = link.get('href', '')
-                    # Kiểm tra URL phân trang dạng /page/X/
-                    page_match = re.search(r'/page/(\d+)', href)
-                    if page_match:
-                        page_num = int(page_match.group(1))
-                        if page_num > max_page:
-                            max_page = page_num
+                    for link in pagination_links:
+                        href = link.get('href', '')
+                        # Kiểm tra URL phân trang dạng /page/X/
+                        page_match = re.search(r'/page/(\d+)', href)
+                        if page_match:
+                            page_num = int(page_match.group(1))
+                            if page_num > max_page:
+                                max_page = page_num
+            
+            # Nếu không tìm thấy liên kết phân trang, thử tìm các phần tử phân trang khác
+            if not pagination_links_found:
+                log_and_emit(f"[CẢNH BÁO] Không tìm thấy liên kết phân trang với các selector thông thường")
+                
+                # Thử tìm các thẻ span có class page-numbers
+                page_number_spans = soup.select('span.page-numbers')
+                if page_number_spans:
+                    log_and_emit(f"[THÔNG TIN] Tìm thấy {len(page_number_spans)} thẻ span page-numbers")
+                    
+                    for span in page_number_spans:
+                        if span.get_text().isdigit():
+                            page_num = int(span.get_text())
+                            if page_num > max_page:
+                                max_page = page_num
             
             # Thông báo về số trang tìm được
             if max_page > 1:
@@ -1410,185 +1486,168 @@ class CategoryCrawler:
             
             # Phân tích văn bản để tìm tổng số sản phẩm
             if count_text:
-                matches = re.search(r'(\d+[\.,]?\d*)\s*(?:sản phẩm|kết quả|products|results)', count_text, re.IGNORECASE)
-                if matches:
-                    # Xử lý chuỗi số có dấu phân cách
-                    num_str = matches.group(1).replace('.', '').replace(',', '')
-                    total_products = int(num_str)
-                    log_and_emit(f"[THÀNH CÔNG] Phát hiện tổng số sản phẩm: {total_products}")
-            
-            # TÌM TỔNG SỐ SẢN PHẨM - Phương pháp 3: Giá trị cố định cho các danh mục cụ thể
-            # Danh mục "bo-dieu-khien-nhiet-do-autonics" có 1417 sản phẩm, mỗi trang 50 sản phẩm => 29 trang
-            if total_products == 0:
-                special_categories = {
-                    'bo-dieu-khien-nhiet-do-autonics': 1417,
-                    'cam-bien-autonics': 950,
-                    'dong-ho-do-autonics': 600
-                }
+                # Tìm số sản phẩm trong các định dạng khác nhau
+                patterns = [
+                    r'(\d+[\.,]?\d*)\s*(?:sản phẩm|kết quả|products|results)',  # Định dạng thông thường
+                    r'Hiển thị\s+\d+\s*\-\s*\d+\s*trong\s+(\d+[\.,]?\d*)',      # "Hiển thị x - y trong N sản phẩm"
+                    r'Showing\s+\d+\s*\-\s*\d+\s*of\s+(\d+[\.,]?\d*)',         # "Showing x - y of N products" 
+                    r'(\d+[\.,]?\d*)\s*(?:items|sản phẩm)'                      # "N items/sản phẩm"
+                ]
                 
-                for category, count in special_categories.items():
-                    if category in current_url:
-                        total_products = count
-                        log_and_emit(f"[THÀNH CÔNG] Phát hiện danh mục đặc biệt '{category}' với {total_products} sản phẩm")
-                        break
-            
-            # TÌM TỔNG SỐ SẢN PHẨM - Phương pháp 4: Từ thẻ Meta
-            if total_products == 0:
-                print(f"[PHÂN TÍCH] Tìm tổng số sản phẩm từ thẻ meta...")
-                meta_description = soup.select_one('meta[name="description"]')
-                if meta_description and meta_description.get('content'):
-                    meta_text = meta_description.get('content')
-                    print(f"  - Tìm thấy meta description: {meta_text[:100]}...")
-                    matches = re.search(r'(\d+[\.,]?\d*)\s*(?:sản phẩm|kết quả|products|results)', meta_text, re.IGNORECASE)
+                for pattern in patterns:
+                    matches = re.search(pattern, count_text, re.IGNORECASE)
                     if matches:
                         # Xử lý chuỗi số có dấu phân cách
                         num_str = matches.group(1).replace('.', '').replace(',', '')
-                        total_products = int(num_str)
-                        print(f"  - Phát hiện tổng số sản phẩm từ meta: {total_products}")
+                        try:
+                            total_products = int(num_str)
+                            log_and_emit(f"[THÀNH CÔNG] Phát hiện tổng số sản phẩm: {total_products}")
+                            break
+                        except ValueError:
+                            log_and_emit(f"[LỖI] Không thể chuyển đổi '{num_str}' thành số nguyên")
             
-            # TÌM TỔNG SỐ SẢN PHẨM - Phương pháp 5: Mặc định cho Autonics
-            # Nếu URL chứa Autonics và không tìm thấy tổng số sản phẩm
-            if total_products == 0 and 'autonics' in current_url.lower():
-                print(f"[PHÂN TÍCH] Tìm tổng số sản phẩm dành riêng cho Autonics...")
-                # Tìm kiếm số sản phẩm từ nội dung trang
-                autonics_count_match = re.search(r'\((\d+[\.,]?\d*)\)', soup.text)
-                if autonics_count_match:
-                    num_str = autonics_count_match.group(1).replace('.', '').replace(',', '')
-                    try:
-                        total_products = int(num_str)
-                        print(f"  - Phát hiện số sản phẩm Autonics: {total_products}")
-                    except ValueError:
-                        pass
-            
-            # TÌM TỔNG SỐ SẢN PHẨM - Phương pháp 6: Dùng giá trị tĩnh dựa trên URL
+            # TÌM TỔNG SỐ SẢN PHẨM - Phương pháp 3: Tìm từ các phần tử HTML khác
             if total_products == 0:
-                print(f"[PHÂN TÍCH] Áp dụng giá trị cố định dựa trên URL danh mục...")
-                # Áp dụng giá trị cố định cho các trang danh mục cụ thể
-                if 'bo-dieu-khien-nhiet-do-autonics' in current_url:
-                    total_products = 1417
-                    print(f"  - Áp dụng giá trị cố định cho danh mục bộ điều khiển nhiệt độ: {total_products} sản phẩm")
-                elif 'bo-chuyen-doi-tin-hieu-autonics' in current_url:
-                    total_products = 85
-                    print(f"  - Áp dụng giá trị cố định cho danh mục bộ chuyển đổi tín hiệu: {total_products} sản phẩm")
+                # Tìm trong các phần tử có thể chứa thông tin số lượng
+                product_count_elements = soup.select('.count, .product-count, .product-total, .total-count')
+                for element in product_count_elements:
+                    try:
+                        text = element.get_text().strip()
+                        # Tìm số trong văn bản
+                        num_match = re.search(r'\d+', text)
+                        if num_match:
+                            num_str = num_match.group(0)
+                            total_products = int(num_str)
+                            log_and_emit(f"[THÀNH CÔNG] Phát hiện tổng số sản phẩm từ phần tử HTML: {total_products}")
+                            break
+                    except Exception as e:
+                        continue
             
-            # Nếu biết tổng số sản phẩm, tính số trang (giả định 50 sản phẩm/trang)
-            calculated_max_page = 0
-            if total_products > 0:
-                products_per_page = 50  # Codienhaiau.com thường hiển thị 50 sản phẩm mỗi trang
-                calculated_max_page = (total_products + products_per_page - 1) // products_per_page
-                print(f"[PHÂN TRANG] Tính toán ra {calculated_max_page} trang dựa trên {total_products} sản phẩm (mỗi trang {products_per_page})")
-                
-                # Sử dụng số trang lớn hơn giữa tính toán và tìm được từ phân trang
-                if calculated_max_page > max_page:
-                    max_page = calculated_max_page
-                    print(f"[PHÂN TRANG] Cập nhật số trang tối đa thành {max_page}")
+            # Nếu vẫn không tìm thấy tổng số sản phẩm, sử dụng max_page để ước tính
+            if total_products == 0 and max_page > 1:
+                # Ước tính dựa trên số sản phẩm trên trang đầu tiên và tổng số trang
+                products_per_page = len(product_urls)
+                if products_per_page > 0:
+                    estimated_total = products_per_page * max_page
+                    log_and_emit(f"[THÔNG TIN] Ước tính tổng số sản phẩm: {estimated_total} (dựa trên {products_per_page} sản phẩm/trang x {max_page} trang)")
+                    total_products = estimated_total
+            
+            # LẤY SỐ TRANG TỐI ĐA từ cài đặt cho danh mục
+            max_pages_setting = self._get_max_pages_for_category(current_url)
+            
+            # Nếu số trang tìm được nhỏ hơn cài đặt, sử dụng giá trị lớn hơn
+            if max_page < max_pages_setting:
+                log_and_emit(f"[THÔNG TIN] Số trang tìm được ({max_page}) nhỏ hơn cài đặt ({max_pages_setting}), sử dụng cài đặt")
+                max_page = max_pages_setting
             
             # Tạo URL cho tất cả các trang
             if max_page > 1:
-                print(f"[PHÂN TRANG] Tạo URL cho {max_page} trang...")
+                log_and_emit(f"[PHÂN TRANG] Tạo URL cho {max_page} trang...")
                 
                 # Thêm URLs cho tất cả các trang (trừ trang hiện tại)
                 for p in range(1, max_page + 1):
                     if p != page_number:  # Bỏ qua trang hiện tại
                         page_url = page_url_template.format(p)
                         pagination_urls.add(page_url)
-                        if p <= 3 or p >= max_page - 2:  # Chỉ in ra 3 trang đầu và 3 trang cuối để không làm rối terminal
-                            print(f"  - Trang {p}: {page_url}")
+                        if p <= 3 or p >= max_page - 2:  # Chỉ in ra một số trang để không làm rối log
+                            log_and_emit(f"[PHÂN TRANG] Thêm trang {p}: {page_url}")
                         elif p == 4:
-                            print(f"  - ... (bỏ qua {max_page - 5} trang ở giữa) ...")
+                            log_and_emit(f"[PHÂN TRANG] ... (bỏ qua {max_page - 5} trang ở giữa) ...")
             else:
-                print(f"[PHÂN TRANG] Chỉ có một trang, không cần phân trang")
+                log_and_emit(f"[PHÂN TRANG] Chỉ có một trang, không cần phân trang")
             
             # Kết quả
-            print(f"[KẾT QUẢ] Tìm thấy {len(product_urls)} sản phẩm từ trang hiện tại")
-            print(f"[KẾT QUẢ] Tìm thấy {len(pagination_urls)} trang phân trang cần truy cập")
-            log_and_emit(f"Tìm thấy {len(product_urls)} sản phẩm từ trang hiện tại và {len(pagination_urls)} trang phân trang")
+            log_and_emit(f"[KẾT QUẢ] Tìm thấy {len(product_urls)} sản phẩm từ trang hiện tại")
+            log_and_emit(f"[KẾT QUẢ] Tìm thấy {len(pagination_urls)} trang phân trang cần truy cập")
             
             # Tải tất cả các trang phân trang và thu thập sản phẩm
             if pagination_urls:
-                print(f"[TIẾN TRÌNH] Bắt đầu thu thập sản phẩm từ {len(pagination_urls)} trang phân trang...")
-                log_and_emit(f"Bắt đầu thu thập sản phẩm từ {len(pagination_urls)} trang phân trang...")
+                log_and_emit(f"[TIẾN TRÌNH] Bắt đầu thu thập sản phẩm từ {len(pagination_urls)} trang phân trang...")
                 
                 # Làm mới danh sách sản phẩm đã có
                 all_products = list(product_urls)
                 processed_pagination = 0
+                total_pagination = len(pagination_urls)
                 
                 for page_url in pagination_urls:
                     try:
                         processed_pagination += 1
-                        print(f"[TRANG {processed_pagination}/{len(pagination_urls)}] Đang tải: {page_url}")
-                        log_and_emit(f"Đang tải trang phân trang {processed_pagination}/{len(pagination_urls)}")
+                        log_and_emit(f"[TIẾN TRÌNH] Đang tải trang {processed_pagination}/{total_pagination}: {page_url}")
                         
-                        page_soup = self._get_soup(page_url)
+                        # Thêm trì hoãn nhỏ để tránh tải quá nhanh
+                        time.sleep(self.request_delay)
+                        
+                        # Tải trang với số lần thử lại
+                        page_soup = None
+                        for attempt in range(self.max_retries):
+                            try:
+                                page_soup = self._get_soup(page_url)
+                                if page_soup:
+                                    break
+                            except Exception as e:
+                                log_and_emit(f"[LỖI] Lần {attempt+1}/{self.max_retries} - Không thể tải trang {page_url}: {str(e)}")
+                                if attempt < self.max_retries - 1:
+                                    time.sleep(self.retry_delay)
+                        
+                        if not page_soup:
+                            log_and_emit(f"[LỖI] Không thể tải trang {page_url} sau {self.max_retries} lần thử")
+                            continue
+                        
+                        # Trích xuất sản phẩm từ trang
                         page_products_found = 0
                         page_product_urls = set()
                         
                         for selector in product_link_selectors:
                             links = page_soup.select(selector)
                             if links:
-                                print(f"  - Selector '{selector}': tìm thấy {len(links)} phần tử")
+                                log_and_emit(f"[THÔNG TIN] Selector '{selector}': tìm thấy {len(links)} phần tử")
                             
-                            # Xử lý tương tự như trên
-                            if selector == 'h2.woocommerce-loop-product__title':
-                                for title in links:
-                                    parent_link = title.find_parent('a')
+                            # Xử lý từng liên kết tìm được
+                            for link in links:
+                                href = None
+                                # Xử lý trường hợp h2.woocommerce-loop-product__title
+                                if selector == 'h2.woocommerce-loop-product__title':
+                                    parent_link = link.find_parent('a')
                                     if parent_link and parent_link.get('href'):
                                         href = parent_link.get('href')
-                                        if href and '/product/' in href:
-                                            full_url = urljoin(current_url, href)
-                                            if full_url not in product_urls:  # Kiểm tra trùng lặp
-                                                all_products.append(full_url)
-                                                page_product_urls.add(full_url)
-                                                page_products_found += 1
-                            else:
-                                for link in links:
+                                else:
                                     href = link.get('href', '')
-                                    if href and '/product/' in href:
-                                        full_url = urljoin(current_url, href)
-                                        if full_url not in product_urls:  # Kiểm tra trùng lặp
-                                            all_products.append(full_url)
-                                            page_product_urls.add(full_url)
-                                            page_products_found += 1
+                                
+                                # Kiểm tra và xử lý URL sản phẩm
+                                if href and '/product/' in href and not href.endswith('/product/'):
+                                    full_url = urljoin(current_url, href)
+                                    if full_url not in product_urls and full_url not in page_product_urls:
+                                        all_products.append(full_url)
+                                        page_product_urls.add(full_url)
+                                        page_products_found += 1
                         
-                        print(f"[KẾT QUẢ TRANG {processed_pagination}] Tìm thấy {page_products_found} sản phẩm mới")
-                        log_and_emit(f"Trang {processed_pagination}: Tìm thấy {page_products_found} sản phẩm mới")
+                        # Cập nhật tiến trình
+                        progress_percent = int((processed_pagination / total_pagination) * 100)
+                        log_and_emit(f"[KẾT QUẢ] Trang {processed_pagination}: Tìm thấy {page_products_found} sản phẩm mới ({progress_percent}%)")
                         
-                        # In ra 5 URL sản phẩm đầu tiên tìm được từ trang này
+                        # In mẫu các URL sản phẩm tìm được
                         if page_product_urls:
-                            print(f"  - Các sản phẩm mới (tối đa 5 mẫu):")
-                            for i, url in enumerate(list(page_product_urls)[:5]):
-                                print(f"    {i+1}. {url}")
-                            if len(page_product_urls) > 5:
-                                print(f"    ... và {len(page_product_urls) - 5} sản phẩm khác")
-                    
+                            sample_size = min(3, len(page_product_urls))
+                            sample_urls = list(page_product_urls)[:sample_size]
+                            sample_text = "\n".join([f"  - {url}" for url in sample_urls])
+                            if len(page_product_urls) > sample_size:
+                                sample_text += f"\n  - ... và {len(page_product_urls) - sample_size} sản phẩm khác"
+                            log_and_emit(f"[MẪU SẢN PHẨM]\n{sample_text}")
+                        
                     except Exception as e:
-                        print(f"[LỖI] Lỗi khi xử lý trang phân trang {page_url}: {str(e)}")
-                        log_and_emit(f"Lỗi khi xử lý trang phân trang: {str(e)}")
+                        log_and_emit(f"[LỖI] Lỗi khi xử lý trang phân trang {page_url}: {str(e)}")
                         traceback.print_exc()
-                    
-                    # Giãn cách giữa các request để tránh bị chặn
-                    print(f"[CHỜ] Đang trì hoãn {self.request_delay} giây trước khi tải trang tiếp theo...")
-                    time.sleep(self.request_delay)
                 
                 # Loại bỏ trùng lặp và trả về danh sách các URL sản phẩm
                 all_products = list(set(all_products))
-                print(f"[HOÀN THÀNH] Đã thu thập xong {len(all_products)} sản phẩm từ {len(pagination_urls)+1} trang")
-                log_and_emit(f"Đã thu thập xong {len(all_products)} sản phẩm từ {len(pagination_urls)+1} trang")
+                log_and_emit(f"[HOÀN THÀNH] Đã thu thập xong {len(all_products)} sản phẩm từ {total_pagination+1} trang")
             else:
                 all_products = list(product_urls)
-                print(f"[HOÀN THÀNH] Thu thập {len(all_products)} sản phẩm từ 1 trang")
-            
-            # In ra 10 URL sản phẩm đầu tiên để kiểm tra
-            if all_products:
-                print(f"[KẾT QUẢ] Danh sách URL sản phẩm (tối đa 10 mẫu):")
-                for i, url in enumerate(all_products[:10]):
-                    print(f"  {i+1}. {url}")
-                if len(all_products) > 10:
-                    print(f"  ... và {len(all_products) - 10} sản phẩm khác")
+                log_and_emit(f"[HOÀN THÀNH] Thu thập {len(all_products)} sản phẩm từ 1 trang")
             
             return all_products
             
         except Exception as e:
-            print(f"[LỖI] Lỗi khi trích xuất liên kết từ {current_url}: {str(e)}")
+            log_and_emit(f"[LỖI] Lỗi khi trích xuất liên kết từ {current_url}: {str(e)}")
             traceback.print_exc()
             return []
