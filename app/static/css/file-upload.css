@@ -1,0 +1,128 @@
+/* Styles cho phần upload file */
+.file-input-label {
+    display: block;
+    width: 100%;
+    padding: 20px;
+    text-align: center;
+    border: 2px dashed #007bff;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-bottom: 15px;
+    transition: all 0.3s;
+    background-color: #f8f9fa;
+}
+
+.file-input-label:hover {
+    background-color: #e3f2fd;
+    border-color: #0056b3;
+    transform: translateY(-2px);
+}
+
+.file-input-label i {
+    font-size: 2rem;
+    margin-bottom: 10px;
+    color: #007bff;
+}
+
+.file-input-label div {
+    font-size: 1.1rem;
+    font-weight: 500;
+    margin-bottom: 5px;
+}
+
+.file-input-label span {
+    display: block;
+    font-size: 0.85rem;
+    color: #6c757d;
+}
+
+/* Styles cho thông báo file đã chọn */
+.selected-file-info {
+    background-color: #e8f4ff;
+    padding: 10px 15px;
+    border-radius: 6px;
+    margin-top: 5px;
+    margin-bottom: 15px;
+    border-left: 4px solid #007bff;
+    display: flex;
+    align-items: center;
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: all 0.3s ease;
+}
+
+.selected-file-info.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.selected-file-info i {
+    margin-right: 10px;
+    font-size: 1.2rem;
+    color: #007bff;
+}
+
+.selected-file-info strong {
+    font-weight: 600;
+    margin-right: 5px;
+}
+
+/* Xử lý danh sách nhiều file */
+.selected-files-list {
+    list-style: none;
+    padding-left: 0;
+    margin-top: 5px;
+    margin-bottom: 0;
+}
+
+.selected-files-list li {
+    margin-bottom: 3px;
+    position: relative;
+    padding-left: 15px;
+}
+
+.selected-files-list li:before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    color: #007bff;
+}
+
+.file-type-icon {
+    font-size: 1.1rem;
+    margin-right: 5px;
+    vertical-align: middle;
+}
+
+.file-type-excel {
+    color: #1d6f42; /* Excel green */
+}
+
+.file-type-text {
+    color: #2b579a; /* Text blue */
+}
+
+.file-type-csv {
+    color: #d83b01; /* CSV orange */
+}
+
+.file-type-image {
+    color: #0078d4; /* Image blue */
+}
+
+/* Animation cho loading */
+@keyframes pulse {
+    0% {
+        opacity: 0.6;
+    }
+    50% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0.6;
+    }
+}
+
+.file-loading {
+    animation: pulse 1.5s infinite;
+} 

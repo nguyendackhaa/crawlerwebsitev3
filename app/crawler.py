@@ -22,6 +22,7 @@ from io import BytesIO
 import json
 from openpyxl import Workbook
 import urllib3
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Headers giả lập trình duyệt để tránh bị chặn
 HEADERS = {
@@ -268,222 +269,76 @@ def extract_category_links(category_urls):
 
 def extract_product_info(url, required_fields=None, index=1):
     """
-    Trích xuất thông tin sản phẩm từ URL
-    
-    Args:
-        url (str): URL của trang sản phẩm
-        required_fields (list): Danh sách các trường thông tin cần lấy
-        index (int): STT của sản phẩm trong danh sách
-        
-    Returns:
-        dict: Thông tin sản phẩm đã trích xuất
+    Trích xuất thông tin sản phẩm từ URL BAA.vn với selector thực tế
     """
-    
     if not required_fields:
-        required_fields = ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Tổng quan', 'Giá']
-    
-    print(f"Đang trích xuất thông tin từ {url}")
-    
-    # Số lần thử tối đa
+        required_fields = ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Giá', 'Tổng quan', 'Ảnh sản phẩm', 'URL']
+    print(f"[DEBUG] Đang trích xuất thông tin từ {url}")
     max_retries = 3
     current_retry = 0
-    
     while current_retry < max_retries:
         try:
-            # Tải nội dung trang
-            response = requests.get(url, headers=HEADERS, timeout=10)
+            response = requests.get(url, headers=HEADERS, timeout=15)
             response.raise_for_status()
             html_content = response.text
-            
-            # Parse HTML
             soup = BeautifulSoup(html_content, 'html.parser')
-            
-            # Khởi tạo kết quả
             product_info = {
                 'STT': index,
                 'URL': url
             }
-            
-            # 1. Trích xuất tên sản phẩm
-            product_name = ""
-            
-            # Thử các CSS selector khác nhau
-            name_selectors = [
-                '.product__info .product-detail h1',
-                '.product__name',
-                '.product-name h1',
-                '.pdp-name',
-                'h1.product-title'
-            ]
-            
-            for selector in name_selectors:
-                name_element = soup.select_one(selector)
-                if name_element:
-                    product_name = name_element.text.strip()
-                    break
-            
-            if not product_name:
-                print(f"Không tìm thấy tên sản phẩm trong URL {url}")
+            # Tên sản phẩm
+            name_element = soup.select_one('h1.product__name')
+            if name_element:
+                product_info['Tên sản phẩm'] = name_element.text.strip()
             else:
-                print(f"Tên sản phẩm: {product_name}")
-                product_info['Tên sản phẩm'] = product_name
-            
-            # 2. Trích xuất mã sản phẩm
-            product_code = ""
-            
-            # Thử các CSS selector khác nhau
-            code_selectors = [
-                '.product__symbol__value',
-                '.product-sku',
-                '.sku',
-                '[itemprop="sku"]',
-                '.product-id'
-            ]
-            
-            for selector in code_selectors:
-                code_element = soup.select_one(selector)
-                if code_element:
-                    product_code = code_element.text.strip()
-                    break
-            
-            # Nếu không tìm thấy, thử trích xuất từ URL
-            if not product_code:
-                print(f"Không tìm thấy mã sản phẩm trong trang, thử trích xuất từ URL {url}")
-                # Lấy phần cuối của URL
-                url_path = urlparse(url).path
-                path_parts = url_path.split("/")
-                if path_parts:
-                    last_part = path_parts[-1]
-                    # Loại bỏ các số ID, giữ lại phần mã sản phẩm
-                    product_code = re.sub(r'_\d+$', '', last_part)
-            
-            if product_code:
-                print(f"Mã sản phẩm: {product_code}")
-                product_info['Mã sản phẩm'] = product_code
-                
-            # Thêm mới: Trích xuất giá sản phẩm
-            product_price = ""
-            
-            # Tìm phần tử div chứa giá
-            price_element = soup.select_one('div.product__card--price span.fw-bold.text-danger.text-start')
-            if price_element:
-                product_price = price_element.text.strip()
-                print(f"Giá sản phẩm: {product_price}")
-                product_info['Giá'] = product_price
+                product_info['Tên sản phẩm'] = ''
+            # Mã sản phẩm
+            code_element = soup.select_one('span.product__symbol__value')
+            if code_element:
+                product_info['Mã sản phẩm'] = code_element.text.strip()
             else:
-                # Thử một số CSS selector khác
-                price_selectors = [
-                    '.product__card--price span',
-                    '.product-price',
-                    '.price-box .price',
-                    '.special-price .price',
-                    '[data-price-type="finalPrice"] .price'
-                ]
-                
-                for selector in price_selectors:
-                    price_element = soup.select_one(selector)
-                    if price_element:
-                        product_price = price_element.text.strip()
-                        print(f"Giá sản phẩm: {product_price}")
-                        product_info['Giá'] = product_price
-                        break
-                        
-            if not product_price:
-                print(f"Không tìm thấy giá sản phẩm trong URL {url}")
-                product_info['Giá'] = ""
-            
-            # 3. Trích xuất thông số kỹ thuật
-            specs_table_html = '<table class="specs-table" border="1" cellpadding="5" style="border-collapse: collapse;"><tbody>'
-            
-            # Tìm bảng thông số
-            specs_found = False
-            params_count = 0
-            
-            # Kiểm tra nếu có tab điều khiển
-            spec_tabs = soup.select('.feature__metadata-nav')
-            has_tabs = len(spec_tabs) > 0
-            
-            if has_tabs:
-                # Nếu có các tab, tìm các tab thông số
-                spec_sections = soup.select('.feature__metadata--tab')
-                
-                for section in spec_sections:
-                    # Kiểm tra nếu là phần thông số kỹ thuật
-                    header = section.select_one('.feature__metadata-header-text')
-                    if header and ('Specifications' in header.text or 'Thông số' in header.text):
-                        print(f"Đã tìm thấy tab thông số: {header.text}")
-                        
-                        # Tìm bảng thông số trong tab
-                        tables = section.select('table')
-                        if tables:
-                            for table in tables:
-                                # Lấy các hàng trong bảng
-                                rows = table.select('tr')
-                                for row in rows:
-                                    # Mỗi hàng có hai cột: tên thông số và giá trị
-                                    cells = row.select('td')
-                                    if len(cells) >= 2:
-                                        param_name_cell = cells[0]
-                                        param_value_cell = cells[1]
-                                        
-                                        # Lấy tên tham số
-                                        param_name = ""
-                                        label = param_name_cell.select_one('label')
-                                        if label:
-                                            param_name = label.text.strip()
-                                        else:
-                                            param_name = param_name_cell.text.strip()
-                                        
-                                        # Lấy giá trị tham số
-                                        param_value = extract_full_value(param_value_cell)
-                                        
-                                        # Thêm vào bảng HTML (tránh các tham số rỗng)
-                                        if param_name and param_value and param_name.lower() not in ['thông số', 'parameter', 'giá trị', 'value']:
-                                            specs_table_html += f'<tr><td>{param_name}</td><td>{param_value}</td></tr>'
-                                            params_count += 1
-            
-            # Đóng bảng HTML
-            specs_table_html += '</tbody></table>'
-            
-            # Thêm vào dữ liệu nếu có thông số
-            if params_count > 0:
-                specs_found = True
-                product_info['Tổng quan'] = specs_table_html
-                print(f"Đã tìm thấy {params_count} thông số kỹ thuật")
+                product_info['Mã sản phẩm'] = ''
+            # Giá
+            price = ''
+            del_element = soup.select_one('del[data-root]')
+            if del_element:
+                price = del_element.text.strip()
+                # Lấy đơn vị tiền tệ
+                unit = ''
+                unit_span = del_element.find_next('span')
+                if unit_span:
+                    unit = unit_span.text.strip()
+                price = f"{price}{unit}"
             else:
-                print("Không tìm thấy thông số kỹ thuật")
-            
-            # Lọc lại kết quả theo các trường yêu cầu
+                # Nếu không có del, lấy giá từ các span khác
+                price_span = soup.select_one('span.fw-bold.text-danger, span.product__price-print')
+                if price_span:
+                    price = price_span.text.strip()
+            product_info['Giá'] = clean_price(price)
+            # Thông số kỹ thuật
+            spec_html = ''
+            spec_table = soup.select_one('table.feature__metadata--tab.active')
+            if spec_table:
+                spec_html = str(spec_table)
+            product_info['Tổng quan'] = spec_html
+            # Ảnh sản phẩm
+            img_url = ''
+            modal_img = soup.select_one('div.modal-body-image.active img')
+            if modal_img and modal_img.get('src'):
+                img_url = modal_img['src']
+            product_info['Ảnh sản phẩm'] = img_url
+            # Sắp xếp lại thứ tự trường
             filtered_info = {}
             for field in required_fields:
-                if field in product_info:
-                    filtered_info[field] = product_info[field]
-                else:
-                    filtered_info[field] = ""  # Giá trị trống cho trường không tìm thấy
-            
+                filtered_info[field] = product_info.get(field, '')
             return filtered_info
-            
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             current_retry += 1
-            print(f"Lỗi tải trang (lần thử {current_retry}): {str(e)}")
+            print(f"[DEBUG] Lỗi khi xử lý {url} (lần {current_retry}): {str(e)}")
             if current_retry < max_retries:
-                print(f"Thử lại trong 3 giây...")
-                time.sleep(3)
+                time.sleep(2)
             else:
-                print(f"Đã thử {max_retries} lần, bỏ qua URL {url}")
-                
-                # Trả về dữ liệu tối thiểu
-                minimal_info = {
-                    'STT': index,
-                    'URL': url
-                }
-                
-                # Thêm các trường còn lại
-                for field in required_fields:
-                    if field not in minimal_info:
-                        minimal_info[field] = ""
-                
-                return minimal_info
+                return {field: '' for field in required_fields}
 
 def extract_full_value(value_cell):
     """
@@ -812,266 +667,43 @@ def extract_full_value(value_cell):
 
 def extract_product_urls(url):
     """
-    Trích xuất tất cả URL sản phẩm từ một URL danh mục
+    Trích xuất tất cả URL sản phẩm từ một URL danh mục (fix: tránh lặp vô hạn phân trang, chỉ lấy URL sản phẩm)
     """
-    from urllib.parse import urlparse  # Thêm import urlparse ở đây
-    
     product_urls = []
     processed_pages = set()
     pages_to_process = [url]
-    
-    is_led_page = "den-thap-led-sang-tinh-chop-nhay-d45mm-qlight-st45l-and-st45ml-series_4779" in url
-    is_baa_special_page = "baa.vn/vn/Category/" in url
-    
     while pages_to_process:
         current_url = pages_to_process.pop(0)
-        
-        # Bỏ qua trang đã xử lý
         if current_url in processed_pages:
             continue
-            
-        # Đánh dấu đã xử lý
         processed_pages.add(current_url)
-        
         print(f"Đang xử lý URL danh mục: {current_url}")
-        
-        # Lấy nội dung HTML
         html = get_html_content(current_url)
         if not html:
             print(f"Không thể tải nội dung từ {current_url}")
             continue
-            
-        # Phân tích HTML
         soup = BeautifulSoup(html, 'html.parser')
-        
-        # Xác định nếu đây là trang danh sách sản phẩm từ BAA.vn
-        is_product_list_page = False
-        if 'baa.vn' in current_url.lower():
-            is_product_list_page = True
-            print(f"Đây là trang danh mục BAA.vn: {current_url}")
-        
-        # Khi xử lý trang BAA.vn
-        if is_product_list_page:
-            # DEBUG: In ra cấu trúc HTML để kiểm tra
-            print("Phân tích cấu trúc HTML trang BAA.vn:")
-            
-            # Tìm trực tiếp các thẻ a trong card product
-            product_links = []
-            
-            # Chiến lược 1: Tìm các thẻ a trong .card.product__card
-            card_links = soup.select('.card.product__card a[href]')
-            if card_links:
-                product_links.extend(card_links)
-                print(f"Chiến lược 1: Tìm thấy {len(card_links)} liên kết trong .card.product__card")
-            
-            # Chiến lược 2: Tìm các thẻ a trong h3.product__name
-            name_links = soup.select('h3.product__name a[href]')
-            if name_links:
-                product_links.extend(name_links)
-                print(f"Chiến lược 2: Tìm thấy {len(name_links)} liên kết trong h3.product__name")
-            
-            # Chiến lược 3: Tìm tất cả các thẻ a có href chứa '/product/'
-            product_href_links = soup.select('a[href*="/product/"]')
-            if product_href_links:
-                product_links.extend(product_href_links)
-                print(f"Chiến lược 3: Tìm thấy {len(product_href_links)} liên kết chứa '/product/'")
-            
-            # Chiến lược 4: Tìm tất cả các thẻ a có href chứa '/san-pham/'
-            san_pham_links = soup.select('a[href*="/san-pham/"]')
-            if san_pham_links:
-                product_links.extend(san_pham_links)
-                print(f"Chiến lược 4: Tìm thấy {len(san_pham_links)} liên kết chứa '/san-pham/'")
-            
-            # Loại bỏ trùng lặp bằng cách kiểm tra href
-            unique_product_links = {}
-            for link in product_links:
-                href = link.get('href')
-                if href and ('/product/' in href or '/san-pham/' in href):
-                    unique_product_links[href] = link
-            
-            print(f"Tổng cộng tìm thấy {len(unique_product_links)} sản phẩm độc nhất trên trang BAA.vn")
-            
-            # Xử lý các sản phẩm
-            for href, link in unique_product_links.items():
-                # Đảm bảo URL đầy đủ
+        # Lấy các link sản phẩm thực sự (ưu tiên selector chuẩn của BAA.vn)
+        for a in soup.select('a[href*="/san-pham/"]'):
+            href = a.get('href')
+            if href:
                 if not href.startswith('http'):
-                    if href.startswith('/'):
-                        parsed_url = urlparse(current_url)
-                        full_url = f"{parsed_url.scheme}://{parsed_url.netloc}{href}"
-                    else:
-                        full_url = f"{current_url.rstrip('/')}/{href}"
+                    parsed_url = urlparse(current_url)
+                    full_url = f"{parsed_url.scheme}://{parsed_url.netloc}{href}" if href.startswith('/') else f"{current_url.rstrip('/')}/{href}"
                 else:
                     full_url = href
-                
-                if full_url not in product_urls:
+                # Chỉ thêm nếu là URL sản phẩm thực sự
+                if is_product_url(full_url) and full_url not in product_urls:
                     product_urls.append(full_url)
-                    print(f"Thêm URL sản phẩm từ BAA.vn: {full_url}")
-            
-            # Xử lý phân trang cho BAA.vn
-            # Kiểm tra nếu có phân trang
-            pagination = soup.select('.pagination li a[href]')
-            if pagination:
-                print(f"Tìm thấy {len(pagination)} liên kết phân trang với bộ chọn .pagination li a[href]")
-                for page_link in pagination:
-                    # Lấy URL trang
-                    page_url = page_link.get('href')
-                    if not page_url:
-                        continue
-                    
-                    # Bỏ qua trang hiện tại
-                    if page_url == current_url:
-                        continue
-                        
-                    # Đảm bảo URL đầy đủ
-                    if not page_url.startswith('http'):
-                        if page_url.startswith('/'):
-                            parsed_url = urlparse(current_url)
-                            page_url = f"{parsed_url.scheme}://{parsed_url.netloc}{page_url}"
-                        else:
-                            page_url = f"{current_url.rstrip('/')}/{page_url}"
-                    
-                    # Bỏ qua các trang đã xử lý
-                    if page_url in processed_pages:
-                        continue
-                    
-                    # Trang số/phân trang
-                    pages_to_process.append(page_url)
-                    print(f"Thêm URL phân trang (cách 1): {page_url}")
-            
-            # Thử tìm các nút phân trang khác nếu chưa tìm thấy
-            if not pagination:
-                # Tìm các liên kết có chứa "page" trong href
-                page_links = soup.select('a[href*="page"]')
-                if page_links:
-                    print(f"Tìm thấy {len(page_links)} liên kết phân trang với bộ chọn a[href*='page']")
-                    for page_link in page_links:
-                        page_url = page_link.get('href')
-                        if page_url and page_url != current_url and page_url not in processed_pages:
-                            # Đảm bảo URL đầy đủ
-                            if not page_url.startswith('http'):
-                                if page_url.startswith('/'):
-                                    parsed_url = urlparse(current_url)
-                                    page_url = f"{parsed_url.scheme}://{parsed_url.netloc}{page_url}"
-                                else:
-                                    page_url = f"{current_url.rstrip('/')}/{page_url}"
-                            
-                            pages_to_process.append(page_url)
-                            print(f"Thêm URL phân trang (cách 2): {page_url}")
-            
-            # Tạo các URL phân trang dựa trên mẫu cho BAA.vn nếu vẫn không tìm thấy
-            if is_baa_special_page and '/page/' not in current_url:
-                # Kiểm tra số trang thực tế từ thông tin pagination trước khi tạo URL phân trang
-                pagination_numbers = []
-                
-                # Tìm các nút số trang
-                page_nums = soup.select('.pagination li a')
-                for page_num_link in page_nums:
-                    # Lấy text của liên kết phân trang
-                    page_text = page_num_link.get_text(strip=True)
-                    # Kiểm tra nếu text là số trang
-                    if page_text and page_text.isdigit():
-                        pagination_numbers.append(int(page_text))
-                
-                # Nếu tìm thấy các số trang, chỉ tạo URL cho các trang thực tế
-                if pagination_numbers:
-                    max_page = max(pagination_numbers)
-                    base_url = current_url.rstrip('/')
-                    
-                    # Chỉ tạo URL cho các trang từ 2 đến max_page
-                    for page_num in range(2, max_page + 1):
-                        page_url = f"{base_url}/page/{page_num}/"
-                        if page_url not in processed_pages:
-                            pages_to_process.append(page_url)
-                            print(f"Thêm URL phân trang (dựa trên số trang thực tế): {page_url}")
-                else:
-                    # Kiểm tra xem có nút "Trang sau" hay không
-                    next_page = soup.select_one('.pagination li.next a, .pagination a.next, a.next')
-                    if next_page:
-                        # Chỉ tạo URL cho trang tiếp theo
-                        base_url = current_url.rstrip('/')
-                        page_url = f"{base_url}/page/2/"
-                        if page_url not in processed_pages:
-                            pages_to_process.append(page_url)
-                            print(f"Thêm URL phân trang (dựa trên nút Trang sau): {page_url}")
-                    else:
-                        print("Không tìm thấy phân trang, không tạo URL phân trang tự động")
-        else:
-            # Xử lý cho các trang không phải BAA.vn như trước
-            product_containers = []
-            
-            # Cấu trúc 1: Các container sản phẩm phổ biến
-            containers = soup.select('.product-list-item, .product-item, .product-items, .products-grid')
-            if containers:
-                product_containers.extend(containers)
-                print(f"Tìm thấy {len(containers)} container sản phẩm")
-            
-            # Cấu trúc 2: Grid hoặc list sản phẩm
-            list_containers = soup.select('.products-grid, .products-list, .listing, .product-listing')
-            if list_containers:
-                product_containers.extend(list_containers)
-                print(f"Tìm thấy {len(list_containers)} grid/list sản phẩm")
-            
-            # Cấu trúc 3: Card sản phẩm - đặc biệt xử lý cho đèn tháp LED
-            card_containers = soup.select('.product-card, .product-item-info, .card.product__card, a.card.product__card')
-            if card_containers:
-                product_containers.extend(card_containers)
-                print(f"Tìm thấy {len(card_containers)} sản phẩm từ card")
-            
-            # Nếu không tìm thấy container, thử tìm trực tiếp các liên kết sản phẩm
-            if not product_containers:
-                # Tìm tất cả liên kết có thể là liên kết sản phẩm
-                all_product_links = soup.select('a[href*="/san-pham/"], a[href*="/product/"], a.product-item-link, a.product_link')
-                
-                # Xử lý từng liên kết
-                for link in all_product_links:
-                    href = link.get('href')
-                    if not href:
-                        continue
-                        
-                    # Đảm bảo URL đầy đủ
-                    product_url = href
-                    if not product_url.startswith('http'):
-                        if product_url.startswith('/'):
-                            parsed_url = urlparse(current_url)
-                            product_url = f"{parsed_url.scheme}://{parsed_url.netloc}{product_url}"
-                        else:
-                            product_url = f"{current_url.rstrip('/')}/{product_url}"
-                    
-                    # Bỏ qua các URL không liên quan - cho URL đèn tháp LED thì cho qua tất cả
-                    if not is_led_page and ('/category/' in product_url.lower() or '/danh-muc/' in product_url.lower() or '/page/' in product_url):
-                        continue
-                        
-                    # Thêm vào danh sách nếu chưa có
-                    if product_url not in product_urls:
-                        # Với URL đèn tháp LED, bỏ qua kiểm tra is_product_url
-                        if is_led_page or is_product_url(product_url):
-                            product_urls.append(product_url)
-                
-            # Xử lý phân trang (tìm các liên kết đến các trang tiếp theo)
-            pagination_links = soup.select('ul.pagination li a, .pages a')
-            for page_link in pagination_links:
-                # Lấy URL trang
-                page_url = page_link.get('href')
-                if not page_url:
-                    continue
-                    
-                # Đảm bảo URL đầy đủ
+        # Xử lý phân trang, chỉ thêm trang chưa xử lý
+        for page_link in soup.select('a[href*="/page/"]'):
+            page_url = page_link.get('href')
+            if page_url:
                 if not page_url.startswith('http'):
-                    if page_url.startswith('/'):
-                        parsed_url = urlparse(current_url)
-                        page_url = f"{parsed_url.scheme}://{parsed_url.netloc}{page_url}"
-                    else:
-                        page_url = f"{current_url.rstrip('/')}/{page_url}"
-                
-                # Bỏ qua các trang đã xử lý
-                if page_url in processed_pages:
-                    continue
-                    
-                # Kiểm tra URL có phải là URL danh mục không
-                if is_category_url(page_url):
+                    parsed_url = urlparse(current_url)
+                    page_url = f"{parsed_url.scheme}://{parsed_url.netloc}{page_url}" if page_url.startswith('/') else f"{current_url.rstrip('/')}/{page_url}"
+                if page_url not in processed_pages and page_url not in pages_to_process:
                     pages_to_process.append(page_url)
-                    print(f"Thêm URL phân trang: {page_url}")
-    
     print(f"Đã xử lý {len(processed_pages)} trang, tìm thấy {len(product_urls)} URL sản phẩm")
     return product_urls
 
@@ -1110,247 +742,73 @@ def scrape_product_info(product_urls, excel_template_path):
     """Thu thập thông tin từ danh sách URL sản phẩm và xuất ra file Excel"""
     # Lọc các URL là URL sản phẩm hợp lệ
     valid_product_urls = [url for url in product_urls if is_product_url(url)]
-    print(f"Tìm thấy {len(valid_product_urls)} URL sản phẩm hợp lệ từ {len(product_urls)} URL đầu vào")
+    print(f"Tìm thấy {len(valid_product_urls)} URL sản phẩm hợp lệ")
     
     # Gửi thông báo bắt đầu
     socketio.emit('progress_update', {'percent': 0, 'message': f'Bắt đầu thu thập thông tin từ {len(valid_product_urls)} sản phẩm'})
     
-    # Các trường cần thu thập - thêm cột Giá trước cột Tổng quan
+    # Các trường cần thu thập
     required_fields = ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Giá', 'Tổng quan']
     
-    print(f"Các trường cần thu thập: {required_fields}")
+    # Sử dụng ThreadPoolExecutor để xử lý đa luồng
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     
     all_products_info = []
     total_products = len(valid_product_urls)
+    processed_count = 0
     
-    for i, url in enumerate(valid_product_urls):
-        # Tính toán tiến trình
-        progress = int((i / total_products) * 100)
-        # Gửi cập nhật tiến trình
-        socketio.emit('progress_update', {
-            'percent': progress, 
-            'message': f'Đang xử lý sản phẩm {i+1}/{total_products}: {url}'
-        })
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        # Tạo các task xử lý sản phẩm
+        future_to_url = {
+            executor.submit(extract_product_info, url, required_fields, i+1): url 
+            for i, url in enumerate(valid_product_urls)
+        }
         
-        try:
-            # Thu thập thông tin cơ bản
-            print(f"Đang thu thập thông tin từ: {url}")
-            response = requests.get(url, headers=HEADERS)
-            response.raise_for_status()
-            
-            # Parse HTML content
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Extract product name
-            product_name_element = soup.select_one('.product__info .product-detail h1')
-            if not product_name_element:
-                product_name_element = soup.select_one('.product__name')
-            if not product_name_element:
-                product_name_element = soup.select_one('h1')
-            product_name = product_name_element.text.strip() if product_name_element else 'Unknown'
-            
-            # Extract product code
-            product_code = ''
-            sku_element = soup.select_one('.product__symbol__value')
-            if sku_element:
-                product_code = sku_element.text.strip()
-            if not product_code:
-                sku_element = soup.select_one('.model-container .model')
-                if sku_element:
-                    product_code = sku_element.text.strip()
-            
-            # Extract product price
-            product_price = ''
-            # 1. Ưu tiên tìm giá từ phần tử span.product__price-print với data-root
-            price_element_with_data = soup.select_one('span.product__price-print[data-root]')
-            if price_element_with_data and 'data-root' in price_element_with_data.attrs:
-                data_root = price_element_with_data.get('data-root')
-                if data_root:
-                    try:
-                        price_value = int(data_root)
-                        formatted_price = f"{price_value:,}".replace(",", ".")
-                        
-                        # Tìm đơn vị tiền tệ
-                        price_unit = ""
-                        
-                        # Tìm trong cùng cell hoặc gần kề
-                        parent_td = price_element_with_data.find_parent('td')
-                        if parent_td:
-                            unit_element = parent_td.select_one('span.product__price-unit')
-                            if unit_element:
-                                price_unit = unit_element.text.strip()
-                        
-                        # Nếu không tìm thấy, tìm element kế tiếp
-                        if not price_unit:
-                            next_element = price_element_with_data.find_next_sibling()
-                            if next_element and 'product__price-unit' in next_element.get('class', []):
-                                price_unit = next_element.text.strip()
-                        
-                        # Nếu vẫn không tìm thấy
-                        if not price_unit:
-                            unit_element = soup.select_one('span.product__price-unit')
-                            if unit_element:
-                                price_unit = unit_element.text.strip()
-                            else:
-                                price_unit = "₫"  # Mặc định
-                        
-                        # Định dạng giá cuối cùng
-                        product_price = formatted_price + price_unit
-                        print(f"Giá từ data-root: {product_price}")
-                    except ValueError as e:
-                        print(f"Lỗi khi xử lý giá từ data-root: {str(e)}")
-            
-            # 2. Nếu không tìm thấy giá từ data-root, thử các vị trí thông thường
-            if not product_price:
-                price_selectors = [
-                    'div.product__card--price span.fw-bold.text-danger.text-start',
-                    '.product__card--price span',
-                    '.product__card--price .fw-bold',
-                    '.product-price',
-                    '.product__price-print',
-                    '.price-box .price',
-                    '.special-price .price',
-                    '[data-price-type="finalPrice"] .price'
-                ]
+        # Xử lý kết quả khi hoàn thành
+        for future in as_completed(future_to_url):
+            url = future_to_url[future]
+            try:
+                product_info = future.result()
+                if product_info:
+                    all_products_info.append(product_info)
                 
-                for selector in price_selectors:
-                    price_element = soup.select_one(selector)
-                    if price_element:
-                        price_text = price_element.text.strip()
-                        
-                        # Tìm đơn vị tiền tệ
-                        price_unit = ""
-                        unit_element = soup.select_one('span.product__price-unit')
-                        if unit_element:
-                            price_unit = unit_element.text.strip()
-                        
-                        # Định dạng giá
-                        if price_unit and price_unit not in price_text:
-                            product_price = price_text + price_unit
-                        else:
-                            product_price = price_text
-                        
-                        print(f"Giá sản phẩm: {product_price}")
-                        break
-            
-            # 3. Làm sạch giá sản phẩm
-            product_price = clean_price(product_price)
-            
-            # Tạo bảng HTML để lưu thông số kỹ thuật
-            specs_table_html = '<table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; font-family: Arial;"><thead><tr><th>Thông số</th><th>Giá trị</th></tr></thead><tbody>'
-            
-            # Biến lưu trữ số thông số đã thu thập
-            params_count = 0
-            
-            # Tìm bảng thông số kỹ thuật
-            specs_table = soup.select_one('table.feature__metadata--tab.active')
-            if not specs_table:
-                specs_table = soup.select_one('table.feature__metadata--tab')
-            if not specs_table:
-                specs_table = soup.select_one('.product-detail-params table')
-            
-            # Xử lý bảng thông số kỹ thuật nếu tìm thấy
-            if specs_table:
-                rows = specs_table.select('tbody tr')
-                for row in rows:
-                    cells = row.select('td')
-                    if len(cells) >= 2:
-                        # Lấy tên tham số
-                        param_name_cell = cells[0]
-                        param_value_cell = cells[1]
-                        
-                        # Lấy tên từ label hoặc text trực tiếp
-                        label = param_name_cell.select_one('label')
-                        param_name = label.text.strip() if label else param_name_cell.text.strip()
-                        
-                        # Xử lý giá trị với các nội dung bị ẩn trong morecontent
-                        full_value = extract_full_value(param_value_cell)
-                        
-                        # Thêm vào bảng HTML
-                        specs_table_html += f'<tr><td>{param_name}</td><td>{full_value}</td></tr>'
-                        params_count += 1
-            
-            # Đóng bảng HTML
-            specs_table_html += '</tbody></table>'
-            
-            # Nếu không có thông số nào được thu thập, hiển thị thông báo
-            if params_count == 0:
-                specs_table_html = '<p>Không tìm thấy thông số kỹ thuật cho sản phẩm này.</p>'
-            
-            # Thông tin debug
-            print(f"Sản phẩm: {product_name}")
-            print(f"Mã sản phẩm: {product_code}")
-            print(f"Giá sản phẩm: {product_price}")
-            print(f"Số thông số kỹ thuật thu thập được: {params_count}")
-            print(f"Độ dài HTML thông số kỹ thuật: {len(specs_table_html)} ký tự")
-            
-            # Thông tin cơ bản của sản phẩm
-            product_info = {
-                'STT': i + 1,
-                'Mã sản phẩm': product_code,
-                'Tên sản phẩm': product_name,
-                'Giá': product_price,
-                'Tổng quan': specs_table_html
-            }
-            
-            all_products_info.append(product_info)
-            
-        except Exception as e:
-            print(f"Lỗi khi xử lý {url}: {str(e)}")
-            socketio.emit('progress_update', {
-                'percent': progress,
-                'message': f'Lỗi khi xử lý {url}: {str(e)}'
-            })
+                processed_count += 1
+                progress = int((processed_count / total_products) * 100)
+                socketio.emit('progress_update', {
+                    'percent': progress,
+                    'message': f'Đã xử lý {processed_count}/{total_products} sản phẩm'
+                })
+                
+            except Exception as e:
+                print(f"Lỗi khi xử lý {url}: {str(e)}")
     
     # Gửi thông báo hoàn thành
     socketio.emit('progress_update', {
-        'percent': 100, 
-        'message': 'Đã hoàn thành việc thu thập thông tin'
+        'percent': 100,
+        'message': f'Đã hoàn thành việc thu thập thông tin từ {len(all_products_info)} sản phẩm'
     })
     
-    print(f"Đã thu thập thông tin từ {len(all_products_info)} sản phẩm.")
-    
-    # Tạo DataFrame từ thông tin đã thu thập
+    # Tạo DataFrame và xuất Excel
     results_df = pd.DataFrame(all_products_info)
-    
-    # Đảm bảo có đủ các cột cần thiết
-    for field in required_fields:
-        if field not in results_df.columns:
-            results_df[field] = ""
-    
-    # Chỉ giữ lại các cột theo thứ tự
     results_df = results_df[required_fields]
     
-    # Tạo file Excel tạm để lưu kết quả
+    # Tạo file Excel tạm
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
     temp_file.close()
     
-    # Thiết lập writer với options để định dạng tốt hơn
-    writer = pd.ExcelWriter(temp_file.name, engine='openpyxl')
-    
     # Ghi DataFrame vào Excel
-    results_df.to_excel(writer, index=False, sheet_name='Sản phẩm')
+    with pd.ExcelWriter(temp_file.name, engine='openpyxl') as writer:
+        results_df.to_excel(writer, index=False, sheet_name='Sản phẩm')
+        
+        # Định dạng các cột
+        worksheet = writer.sheets['Sản phẩm']
+        worksheet.column_dimensions['A'].width = 5  # STT
+        worksheet.column_dimensions['B'].width = 20  # Mã sản phẩm
+        worksheet.column_dimensions['C'].width = 40  # Tên sản phẩm
+        worksheet.column_dimensions['D'].width = 15  # Giá
+        worksheet.column_dimensions['E'].width = 80  # Tổng quan
     
-    # Lấy worksheet
-    workbook = writer.book
-    worksheet = writer.sheets['Sản phẩm']
-    
-    # Định dạng các cột
-    # Đặt chiều rộng cho cột STT
-    worksheet.column_dimensions['A'].width = 5
-    # Đặt chiều rộng cho cột Mã sản phẩm
-    worksheet.column_dimensions['B'].width = 20
-    # Đặt chiều rộng cho cột Tên sản phẩm
-    worksheet.column_dimensions['C'].width = 40
-    # Đặt chiều rộng cho cột Giá
-    worksheet.column_dimensions['D'].width = 15
-    # Đặt chiều rộng cho cột Tổng quan
-    worksheet.column_dimensions['E'].width = 80
-    
-    # Lưu file
-    writer.close()
-    
-    return temp_file.name 
+    return temp_file.name
 
 def search_autonics_product(product_code):
     """

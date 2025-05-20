@@ -217,3 +217,48 @@ def export_comparison_report(result, file1_path, file2_path, output_dir):
         logger.error(f"Lỗi khi tạo báo cáo Excel: {str(e)}")
         logger.error(traceback.format_exc())
         return None 
+
+def compare_product_details(file1_path, file2_path, output_path):
+    """
+    So sánh chi tiết sản phẩm giữa file Excel (sheet 'Tổng hợp sản phẩm') và file CSV.
+    Xuất ra file Excel với 3 sheet: Trùng mã, Chỉ file 1, Chỉ file 2.
+    """
+    # Đọc dữ liệu
+    df1 = pd.read_excel(file1_path, sheet_name='Tổng hợp sản phẩm')
+    df2 = pd.read_csv(file2_path)
+
+    # Chuẩn hóa mã sản phẩm về str và strip
+    df1['Mã sản phẩm'] = df1['Mã sản phẩm'].astype(str).str.strip()
+    df2['Mã sản phẩm'] = df2['Mã sản phẩm'].astype(str).str.strip()
+
+    # Tìm các mã trùng
+    codes1 = set(df1['Mã sản phẩm'])
+    codes2 = set(df2['Mã sản phẩm'])
+    duplicate_codes = codes1 & codes2
+    only_file1_codes = codes1 - codes2
+    only_file2_codes = codes2 - codes1
+
+    # Lọc dữ liệu
+    df1_trung = df1[df1['Mã sản phẩm'].isin(duplicate_codes)].copy()
+    df2_trung = df2[df2['Mã sản phẩm'].isin(duplicate_codes)].copy()
+    df1_only = df1[df1['Mã sản phẩm'].isin(only_file1_codes)].copy()
+    df2_only = df2[df2['Mã sản phẩm'].isin(only_file2_codes)].copy()
+
+    # Gộp thông tin trùng mã (giữ cả 2 nguồn, thêm tiền tố để phân biệt)
+    df_trung = pd.merge(df1_trung, df2_trung, on='Mã sản phẩm', how='outer', suffixes=('_file1', '_file2'))
+
+    # Sắp xếp theo danh mục nếu có
+    if 'Danh mục' in df1.columns:
+        df1_only = df1_only.sort_values(by=['Danh mục', 'Mã sản phẩm'])
+        if 'Danh mục_file1' in df_trung.columns:
+            df_trung = df_trung.sort_values(by=['Danh mục_file1', 'Mã sản phẩm'])
+    if 'ID' in df2.columns:
+        df2_only = df2_only.sort_values(by=['ID'])
+
+    # Xuất ra file Excel
+    with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+        df_trung.to_excel(writer, sheet_name='Trùng mã', index=False)
+        df1_only.to_excel(writer, sheet_name='Chỉ file 1', index=False)
+        df2_only.to_excel(writer, sheet_name='Chỉ file 2', index=False)
+
+    return output_path 

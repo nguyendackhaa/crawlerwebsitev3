@@ -3,144 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CrawlBot - Công cụ thu thập dữ liệu sản phẩm</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-    <style>
-        /* Các style chung */
-        body {
-            padding-top: 20px;
-            padding-bottom: 20px;
-            background-color: #f8f9fa;
-        }
-        .main-container {
-            max-width: 800px;
-            margin: 0 auto;
-            background-color: #fff;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        }
-        /* Style cho form */
-        .form-container {
-            padding: 20px;
-            background-color: #f8f9fa;
-            border-radius: 10px;
-        }
-        .steps {
-            margin: 20px 0;
-            counter-reset: step;
-        }
-        .step {
-            position: relative;
-            padding-left: 40px;
-            margin-bottom: 10px;
-        }
-        .step::before {
-            content: counter(step);
-            counter-increment: step;
-            position: absolute;
-            left: 0;
-            width: 30px;
-            height: 30px;
-            background-color: #007bff;
-            color: white;
-            border-radius: 50%;
-            text-align: center;
-            line-height: 30px;
-            font-weight: bold;
-        }
-        .step p {
-            margin: 0;
-            padding: 5px 0;
-        }
-        .data-format {
-            margin-bottom: 20px;
-            padding: 15px;
-            background-color: #e9ecef;
-            border-radius: 5px;
-        }
-        .file-input-label {
-            display: block;
-            width: 100%;
-            padding: 15px;
-            text-align: center;
-            border: 2px dashed #007bff;
-            border-radius: 5px;
-            cursor: pointer;
-            margin-bottom: 10px;
-            transition: all 0.3s;
-        }
-        .file-input-label:hover {
-            background-color: #f0f7ff;
-        }
-
-        /* Thêm style cho progress bar */
-        .progress-container {
-            display: none;
-            margin-top: 20px;
-            margin-bottom: 20px;
-        }
-        .progress {
-            height: 25px;
-        }
-        .progress-bar {
-            line-height: 25px;
-            font-size: 14px;
-            font-weight: bold;
-        }
-        #progress-message {
-            margin-top: 10px;
-            font-size: 14px;
-            color: #6c757d;
-        }
-        
-        /* Terminal UI Styles */
-        #log-terminal {
-            display: none;
-            margin-top: 15px; 
-            background: #1e1e1e; 
-            color: #33ff33; 
-            font-family: 'Consolas', 'Monaco', monospace; 
-            padding: 10px; 
-            border-radius: 5px; 
-            height: 300px; 
-            overflow-y: auto; 
-            white-space: pre-wrap; 
-            word-wrap: break-word;
-            font-size: 13px;
-            line-height: 1.4;
-            border: 1px solid #333;
-            box-shadow: inset 0 0 10px rgba(0,0,0,0.7);
-        }
-        .terminal-prompt {
-            color: #0cf;
-        }
-        .terminal-command {
-            color: #ffcc00;
-        }
-        .terminal-cursor {
-            background-color: #ccc;
-            color: #000;
-        }
-        .terminal-success {
-            color: #33ff33;
-        }
-        .terminal-warning {
-            color: #ffcc00;
-        }
-        .terminal-error {
-            color: #ff3333;
-        }
-        .terminal-info {
-            color: #33ff33;
-        }
-    </style>
+    <title>{{ title|default('CrawlBot - Công cụ thu thập dữ liệu sản phẩm') }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.3/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/file-upload.css') }}">
+    <!-- Script trước đây đã được chuyển sang file riêng -->
 </head>
 <body>
-    <div class="container main-container">
+    <div class="container">
+        <div class="main-container">
         <h1 class="text-center mb-4">CrawlBot</h1>
-        <h5 class="text-center text-muted mb-4">Công cụ thu thập dữ liệu sản phẩm từ website</h5>
+            <p class="text-center mb-4">Công cụ thu thập dữ liệu sản phẩm từ website</p>
+            
+            <!-- Thông báo thành công -->
+            <div id="success-alert" class="alert alert-success" {% if not success_message %}style="display: none;"{% endif %}>
+                {{ success_message }}
+                {% if download_url %}
+                <div class="mt-2">
+                    <a href="{{ download_url }}" class="btn btn-success btn-sm">
+                        <i class="bi bi-download"></i> Tải xuống kết quả
+                    </a>
+                </div>
+                {% endif %}
+            </div>
 
         {% if error %}
         <div class="alert alert-danger">
@@ -148,68 +34,76 @@
         </div>
         {% endif %}
 
-        {% if success_message %}
-        <div class="alert alert-success">
-            {{ success_message }}
-        </div>
-        {% endif %}
-
         <!-- Thanh tiến trình -->
-        <div id="progress-container" class="progress-container">
-            <div class="progress">
-                <div id="progress-bar" class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
-            </div>
-            <div id="progress-message">Đang chuẩn bị...</div>
-            
-            <!-- Terminal UI để hiển thị log khi cào dữ liệu - Làm hiển thị luôn -->
-            <div id="log-terminal" style="margin-top: 15px; background: #1e1e1e; color: #33ff33; font-family: 'Consolas', 'Monaco', monospace; padding: 10px; border-radius: 5px; height: 300px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; font-size: 13px; line-height: 1.4; border: 1px solid #333; box-shadow: inset 0 0 10px rgba(0,0,0,0.7);">
-            <span class="terminal-prompt" style="color: #0cf;">$ </span><span class="terminal-command" style="color: #ffcc00;">crawler --start</span>
-            <span style="color: #33ff33;">Khởi động công cụ cào dữ liệu...</span>
-            </div>
-            
-            <!-- Terminal mới riêng cho codienhaiau -->
-            <div class="card mt-3 bg-dark">
-                <div class="card-header text-light d-flex justify-content-between align-items-center">
-                    <span><i class="bi bi-terminal"></i> Terminal Live</span>
-                    <button id="clear-both-terminal" class="btn btn-sm btn-outline-light">Clear</button>
+        <div id="progress-container" class="mt-3 d-none">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">Tiến trình cào dữ liệu</h5>
                 </div>
-                <div class="card-body p-0">
-                    <div id="codienhaiau-terminal" class="bg-dark text-light font-monospace p-3" style="height: 300px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; font-size: 12px; line-height: 1.3; border: 1px solid #333; box-shadow: inset 0 0 10px rgba(0,0,0,0.5); border-radius: 0;">
-                        <div class="text-success">Terminal đã được xóa. Sẵn sàng cào dữ liệu...</div>
+                <div class="card-body">
+                    <div class="progress mb-3">
+                        <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%">0%</div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="alert alert-info mb-2">
+                                <span id="progress-message">Đang khởi động...</span>
+                            </div>
+                            <div class="card bg-light">
+                                <div class="card-body py-2">
+                                    <small id="progress-detail" class="text-muted">Đang chuẩn bị...</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Thêm thống kê chi tiết -->
+                    <div class="mt-3">
+                        <h6>Thống kê tiến trình:</h6>
+                        <table class="table table-sm table-bordered">
+                            <tr>
+                                <td width="50%"><small>Trạng thái</small></td>
+                                <td width="50%"><small id="progress-status">Đang chuẩn bị</small></td>
+                            </tr>
+                            <tr>
+                                <td><small>Thời gian đã chạy</small></td>
+                                <td><small id="progress-time">0s</small></td>
+                            </tr>
+                            <tr>
+                                <td><small>Tốc độ xử lý</small></td>
+                                <td><small id="progress-speed">-</small></td>
+                            </tr>
+                        </table>
                     </div>
                 </div>
             </div>
         </div>
 
-        {% if download_url %}
-        <div class="alert alert-success mb-4">
-            Thu thập dữ liệu thành công! <a href="{{ download_url }}" class="alert-link">Tải xuống kết quả</a>
-        </div>
-        {% endif %}
-
         <ul class="nav nav-tabs mb-4" id="myTab" role="tablist">
             <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="extract-tab" data-bs-toggle="tab" data-bs-target="#extract" type="button" role="tab" aria-controls="extract" aria-selected="true">
+                    <button class="nav-link {% if active_tab == 'extract-tab' or not active_tab %}active{% endif %}" id="extract-tab" data-bs-toggle="tab" data-bs-target="#extract" type="button" role="tab" aria-controls="extract" aria-selected="{% if active_tab == 'extract-tab' or not active_tab %}true{% else %}false{% endif %}">
                     1. Thu thập liên kết sản phẩm
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="scrape-tab" data-bs-toggle="tab" data-bs-target="#scrape" type="button" role="tab" aria-controls="scrape" aria-selected="false">
+                    <button class="nav-link {% if active_tab == 'scrape-tab' %}active{% endif %}" id="scrape-tab" data-bs-toggle="tab" data-bs-target="#scrape" type="button" role="tab" aria-controls="scrape" aria-selected="{% if active_tab == 'scrape-tab' %}true{% else %}false{% endif %}">
                     2. Thu thập thông tin sản phẩm
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="images-tab" data-bs-toggle="tab" data-bs-target="#images" type="button" role="tab" aria-controls="images" aria-selected="false">
+                    <button class="nav-link {% if active_tab == 'images-tab' %}active{% endif %}" id="images-tab" data-bs-toggle="tab" data-bs-target="#images" type="button" role="tab" aria-controls="images" aria-selected="{% if active_tab == 'images-tab' %}true{% else %}false{% endif %}">
                     3. Tải ảnh sản phẩm Autonics
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="view-images-tab" data-bs-toggle="tab" data-bs-target="#view-images" type="button" role="tab" aria-controls="view-images" aria-selected="false">
+                    <button class="nav-link {% if active_tab == 'view-images-tab' %}active{% endif %}" id="view-images-tab" data-bs-toggle="tab" data-bs-target="#view-images" type="button" role="tab" aria-controls="view-images" aria-selected="{% if active_tab == 'view-images-tab' %}true{% else %}false{% endif %}">
                     4. Chuyển đổi ảnh JPG sang WebP
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="jpg-download-tab" data-bs-toggle="tab" data-bs-target="#jpg-download" type="button" role="tab" aria-controls="jpg-download" aria-selected="false">
+                    <button class="nav-link {% if active_tab == 'jpg-download-tab' %}active{% endif %}" id="jpg-download-tab" data-bs-toggle="tab" data-bs-target="#jpg-download" type="button" role="tab" aria-controls="jpg-download" aria-selected="{% if active_tab == 'jpg-download-tab' %}true{% else %}false{% endif %}">
                     5. Tải ảnh chất lượng cao (JPG)
                 </button>
             </li>
@@ -234,8 +128,13 @@
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="filter-products-tab" data-bs-toggle="tab" data-bs-target="#filter-products" type="button" role="tab" aria-controls="filter-products" aria-selected="false">
+                    <button class="nav-link {% if active_tab == 'filter-products-tab' %}active{% endif %}" id="filter-products-tab" data-bs-toggle="tab" data-bs-target="#filter-products" type="button" role="tab" aria-controls="filter-products" aria-selected="{% if active_tab == 'filter-products-tab' %}true{% else %}false{% endif %}">
                     <i class="bi bi-funnel"></i> Lọc mã sản phẩm
+                </button>
+            </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link {% if active_tab == 'filter-product-types-tab' %}active{% endif %}" id="filter-product-types-tab" data-bs-toggle="tab" data-bs-target="#filter-product-types" type="button" role="tab" aria-controls="filter-product-types" aria-selected="{% if active_tab == 'filter-product-types-tab' %}true{% else %}false{% endif %}">
+                        <i class="bi bi-funnel"></i> Lọc theo loại
                 </button>
             </li>
             <li class="nav-item" role="presentation">
@@ -254,13 +153,13 @@
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="category-scrape-tab" data-bs-toggle="tab" data-bs-target="#category-scrape" type="button" role="tab" aria-controls="category-scrape" aria-selected="false">
-                    <i class="bi bi-folder-symlink"></i> Cào nhiều danh mục (Dữ liệu)
+                <button class="nav-link" id="codienhaiau-crawler-tab" data-bs-toggle="tab" data-bs-target="#codienhaiau-crawler" type="button" role="tab" aria-controls="codienhaiau-crawler" aria-selected="false">
+                    <i class="bi bi-globe"></i> Cào dữ liệu Codienhaiau.com
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="codienhaiau-crawler-tab" data-bs-toggle="tab" data-bs-target="#codienhaiau-crawler" type="button" role="tab" aria-controls="codienhaiau-crawler" aria-selected="false">
-                    <i class="bi bi-globe"></i> Cào dữ liệu Codienhaiau.com
+                <button class="nav-link" id="baa-crawler-tab" data-bs-toggle="tab" data-bs-target="#baa-crawler" type="button" role="tab" aria-controls="baa-crawler" aria-selected="false">
+                    <i class="bi bi-globe"></i> Cào dữ liệu BAA.vn
                 </button>
             </li>
         </ul>
@@ -330,19 +229,19 @@
                         <div class="row">
                             <div class="col-md-6">
                                 <label for="product_link_file" class="file-input-label">
-                                    <i class="bi bi-link-45deg fs-3"></i>
-                                    <div class="mt-2">File TXT chứa danh sách liên kết sản phẩm</div>
-                                    <span>Chỉ chấp nhận file .txt</span>
-                                    <input type="file" id="product_link_file" name="product_link_file" class="d-none" accept=".txt">
+                                        <i class="bi bi-file-earmark-text fs-3"></i>
+                                        <div class="mt-2">File .txt chứa URL sản phẩm</div>
+                                        <span>Mỗi URL trên một dòng</span>
+                                        <input type="file" id="product_link_file" name="product_link_file" class="d-none" accept=".txt" onchange="updateFileName(this, 'product_link_file_name')">
                                 </label>
                                 <div id="product_link_file_name" class="mb-3 text-muted"></div>
                             </div>
                             <div class="col-md-6">
                                 <label for="excel_template" class="file-input-label">
                                     <i class="bi bi-file-earmark-excel fs-3"></i>
-                                    <div class="mt-2">File Excel mẫu chứa tiêu đề các cột thông tin</div>
+                                        <div class="mt-2">File mẫu Excel (nếu có)</div>
                                     <span>Chỉ chấp nhận file .xlsx, .xls</span>
-                                    <input type="file" id="excel_template" name="excel_template" class="d-none" accept=".xlsx, .xls">
+                                        <input type="file" id="excel_template" name="excel_template" class="d-none" accept=".xlsx, .xls" onchange="updateFileName(this, 'excel_template_name')">
                                 </label>
                                 <div id="excel_template_name" class="mb-3 text-muted"></div>
                             </div>
@@ -382,10 +281,10 @@
 
                     <form action="/download-images" method="post" enctype="multipart/form-data" id="images-form">
                         <label for="product_code_file" class="file-input-label">
-                            <i class="bi bi-image fs-3"></i>
-                            <div class="mt-2">File TXT chứa danh sách mã sản phẩm Autonics</div>
-                            <span>Chỉ chấp nhận file .txt</span>
-                            <input type="file" id="product_code_file" name="product_code_file" class="d-none" accept=".txt">
+                                <i class="bi bi-file-earmark-text fs-3"></i>
+                                <div class="mt-2">File .txt chứa mã sản phẩm</div>
+                                <span>Mỗi mã sản phẩm trên một dòng</span>
+                                <input type="file" id="product_code_file" name="product_code_file" class="d-none" accept=".txt" onchange="updateFileName(this, 'product_code_file_name')">
                         </label>
                         <div id="product_code_file_name" class="mb-3 text-muted"></div>
                         <button type="submit" class="btn btn-primary w-100">Tải ảnh sản phẩm</button>
@@ -422,10 +321,10 @@
 
                     <form action="/convert-to-webp" method="post" enctype="multipart/form-data" id="convert-form">
                         <label for="image_files" class="file-input-label">
-                            <i class="bi bi-images fs-3"></i>
-                            <div class="mt-2">Chọn file ảnh cần chuyển đổi</div>
-                            <span>Chấp nhận file .jpg, .jpeg, .png</span>
-                            <input type="file" id="image_files" name="image_files" class="d-none" accept=".jpg,.jpeg,.png" multiple>
+                                <i class="bi bi-file-earmark-image fs-3"></i>
+                                <div class="mt-2">Tải lên hình ảnh cần chuyển đổi</div>
+                                <span>Chỉ chấp nhận file .jpg, .jpeg, .png</span>
+                                <input type="file" id="image_files" name="image_files" class="d-none" accept=".jpg,.jpeg,.png" multiple onchange="updateFileNameMultiple(this, 'image_files_name')">
                         </label>
                         <div id="image_files_name" class="mb-3 text-muted"></div>
                         <button type="submit" class="btn btn-primary w-100">Chuyển đổi sang WebP</button>
@@ -462,10 +361,10 @@
 
                     <form action="/download-jpg-images" method="post" enctype="multipart/form-data" id="jpg-images-form">
                         <label for="jpg_product_code_file" class="file-input-label">
-                            <i class="bi bi-image fs-3"></i>
-                            <div class="mt-2">File TXT chứa danh sách mã sản phẩm Autonics</div>
-                            <span>Chỉ chấp nhận file .txt</span>
-                            <input type="file" id="jpg_product_code_file" name="product_code_file" class="d-none" accept=".txt">
+                                <i class="bi bi-file-earmark-text fs-3"></i>
+                                <div class="mt-2">File .txt chứa mã sản phẩm</div>
+                                <span>Mỗi mã sản phẩm trên một dòng</span>
+                                <input type="file" id="jpg_product_code_file" name="product_code_file" class="d-none" accept=".txt" onchange="updateFileName(this, 'jpg_product_code_file_name')">
                         </label>
                         <div id="jpg_product_code_file_name" class="mb-3 text-muted"></div>
                         <button type="submit" class="btn btn-primary w-100">Tải ảnh JPG chất lượng cao</button>
@@ -505,10 +404,10 @@
 
                     <form action="/download-documents" method="post" enctype="multipart/form-data" id="pdf-documents-form">
                         <label for="pdf_product_code_file" class="file-input-label">
-                            <i class="bi bi-file-pdf fs-3"></i>
-                            <div class="mt-2">File TXT chứa danh sách URL sản phẩm BAA.vn</div>
-                            <span>Chỉ chấp nhận file .txt</span>
-                            <input type="file" id="pdf_product_code_file" name="product_code_file" class="d-none" accept=".txt">
+                                <i class="bi bi-file-earmark-text fs-3"></i>
+                                <div class="mt-2">File .txt chứa URL sản phẩm BAA.vn</div>
+                                <span>Mỗi URL trên một dòng</span>
+                                <input type="file" id="pdf_product_code_file" name="product_code_file" class="d-none" accept=".txt" onchange="updateFileName(this, 'pdf_product_code_file_name')">
                         </label>
                         <div id="pdf_product_code_file_name" class="mb-3 text-muted"></div>
                         <button type="submit" class="btn btn-primary w-100">Tải tài liệu PDF</button>
@@ -554,11 +453,12 @@
                     
                     <form action="{{ url_for('main.download_baa_images') }}" method="post" enctype="multipart/form-data" class="mt-4">
                         <label for="product_links_file" class="file-input-label">
-                            <i class="bi bi-cloud-arrow-up fs-1"></i>
-                            <span>Chọn file TXT chứa danh sách URL sản phẩm</span>
+                                <i class="bi bi-file-earmark-text fs-3"></i>
+                                <div class="mt-2">File .txt chứa URL sản phẩm</div>
+                                <span>Mỗi URL trên một dòng</span>
+                                <input type="file" id="product_links_file" name="product_links_file" class="d-none" accept=".txt" required onchange="updateFileName(this, 'product_links_file_name')">
                         </label>
-                        <input type="file" name="product_links_file" id="product_links_file" style="display: none;" accept=".txt" onchange="updateFileName(this, 'product_links_file_name')">
-                        <div id="product_links_file_name" class="mb-3"></div>
+                            <div id="product_links_file_name" class="mb-3 text-muted"></div>
                         
                         <button type="submit" class="btn btn-primary w-100">
                             <i class="bi bi-image"></i> Tải ảnh sản phẩm
@@ -652,18 +552,18 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                             <div class="col-md-6">
                                 <label for="excel_file_1" class="file-input-label">
                                     <i class="bi bi-file-earmark-excel fs-3"></i>
-                                    <div class="mt-2">File Excel #1</div>
+                                        <div class="mt-2">File Excel thứ nhất</div>
                                     <span>Chỉ chấp nhận file .xlsx, .xls, .csv</span>
-                                    <input type="file" id="excel_file_1" name="excel_file_1" class="d-none" accept=".xlsx, .xls, .csv">
+                                        <input type="file" id="excel_file_1" name="excel_file_1" class="d-none" accept=".xlsx, .xls, .csv" onchange="updateFileName(this, 'excel_file_1_name')">
                                 </label>
                                 <div id="excel_file_1_name" class="mb-3 text-muted"></div>
                             </div>
                             <div class="col-md-6">
                                 <label for="excel_file_2" class="file-input-label">
                                     <i class="bi bi-file-earmark-excel fs-3"></i>
-                                    <div class="mt-2">File Excel #2</div>
+                                        <div class="mt-2">File Excel thứ hai</div>
                                     <span>Chỉ chấp nhận file .xlsx, .xls, .csv</span>
-                                    <input type="file" id="excel_file_2" name="excel_file_2" class="d-none" accept=".xlsx, .xls, .csv">
+                                        <input type="file" id="excel_file_2" name="excel_file_2" class="d-none" accept=".xlsx, .xls, .csv" onchange="updateFileName(this, 'excel_file_2_name')">
                                 </label>
                                 <div id="excel_file_2_name" class="mb-3 text-muted"></div>
                             </div>
@@ -674,7 +574,7 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
             </div>
             
             <!-- Tab lọc mã sản phẩm -->
-            <div class="tab-pane fade" id="filter-products" role="tabpanel" aria-labelledby="filter-products-tab">
+                <div class="tab-pane fade {% if active_tab == 'filter-products-tab' %}show active{% endif %}" id="filter-products" role="tabpanel" aria-labelledby="filter-products-tab">
                 <div class="form-container">
                     <h4 class="mb-3">Lọc mã sản phẩm từ file Excel</h4>
                     
@@ -685,6 +585,7 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                             <li>Nhập danh sách mã sản phẩm cần xóa (mỗi mã trên một dòng)</li>
                             <li>Tải lên file Excel chứa dữ liệu sản phẩm</li>
                             <li>Hệ thống sẽ tự động xóa các dòng có mã sản phẩm (cột B) trùng với danh sách đã nhập</li>
+                                <li>Danh sách mã đã lọc sẽ được thêm vào cột C (dòng đầu tiên)</li>
                             <li>Tạo file Excel mới với các sheet:
                                 <ul>
                                     <li>Dữ liệu đã lọc: chứa dữ liệu sau khi đã xóa các mã</li>
@@ -715,16 +616,118 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                         
                         <div class="mb-3">
                             <label for="excel_file" class="file-input-label">
-                                <i class="bi bi-file-earmark-excel fs-3"></i>
+                                    <i class="bi bi-file-earmark-excel"></i>
                                 <div class="mt-2">File Excel chứa dữ liệu sản phẩm</div>
                                 <span>Chỉ chấp nhận file .xlsx, .xls</span>
-                                <input type="file" id="excel_file" name="excel_file" class="d-none" accept=".xlsx, .xls" required>
+                                    <input type="file" id="excel_file" name="excel_file" class="d-none" accept=".xlsx, .xls" required onchange="updateFileName(this, 'excel_file_name')">
                             </label>
-                            <div id="excel_file_name" class="mb-3 text-muted"></div>
+                                <div id="excel_file_name" class="mb-3"></div>
                         </div>
                         
                         <button type="submit" class="btn btn-primary w-100">
                             <i class="bi bi-funnel"></i> Lọc mã sản phẩm
+                        </button>
+                    </form>
+                </div>
+            </div>
+                
+                <!-- Tab lọc theo loại -->
+                <div class="tab-pane fade {% if active_tab == 'filter-product-types-tab' %}show active{% endif %}" id="filter-product-types" role="tabpanel" aria-labelledby="filter-product-types-tab">
+                    <div class="form-container">
+                        <h4 class="mb-3">Lọc sản phẩm theo loại</h4>
+                        
+                        <div class="data-format">
+                            <h5>Thông tin về chức năng</h5>
+                            <p>Chức năng này cho phép lọc sản phẩm theo loại (như cảm biến tiệm cận, sợi quang, quang điện, ...):</p>
+                            <ol>
+                                <li>Chọn các loại sản phẩm cần lọc từ danh sách</li>
+                                <li>Tải lên file Excel chứa dữ liệu sản phẩm</li>
+                                <li>Hệ thống sẽ tự động tìm và lọc các sản phẩm thuộc loại đã chọn</li>
+                                <li>Kết quả sẽ được xuất ra file Excel mới với các sheet:
+                                    <ul>
+                                        <li>Sheet riêng cho mỗi loại sản phẩm đã chọn</li>
+                                        <li>Sheet "Tất cả" chứa tổng hợp tất cả sản phẩm đã lọc</li>
+                                        <li>Sheet "Tổng kết" báo cáo số lượng sản phẩm của mỗi loại</li>
+                                    </ul>
+                                </li>
+                            </ol>
+                        </div>
+                        
+                        <div class="steps">
+                            <div class="step">
+                                <p>Chọn các loại sản phẩm cần lọc</p>
+                            </div>
+                            <div class="step">
+                                <p>Tải lên file <strong>Excel</strong> chứa dữ liệu sản phẩm</p>
+                            </div>
+                            <div class="step">
+                                <p>Nhấn nút "Lọc theo loại" để tiến hành xử lý</p>
+                            </div>
+                        </div>
+
+                        <form action="{{ url_for('main.filter_product_types') }}" method="post" enctype="multipart/form-data" id="filter-product-types-form">
+                            <div class="mb-3">
+                                <label class="form-label">Chọn các loại sản phẩm cần lọc:</label>
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" name="product_types" id="type_tiem_can" value="tiem_can">
+                                            <label class="form-check-label" for="type_tiem_can">Tiệm cận</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" name="product_types" id="type_soi_quang" value="soi_quang">
+                                            <label class="form-check-label" for="type_soi_quang">Sợi quang</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" name="product_types" id="type_quang_dien" value="quang_dien">
+                                            <label class="form-check-label" for="type_quang_dien">Quang điện</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" name="product_types" id="type_vung_kv" value="vung_kv">
+                                            <label class="form-check-label" for="type_vung_kv">Vùng (khu vực)</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" name="product_types" id="type_ap_suat" value="ap_suat">
+                                            <label class="form-check-label" for="type_ap_suat">Áp suất</label>
+                                        </div>
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" name="product_types" id="type_luu_luong" value="luu_luong">
+                                            <label class="form-check-label" for="type_luu_luong">Lưu lượng</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row mt-2">
+                                    <div class="col-md-4">
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" name="product_types" id="type_xy_lanh" value="xy_lanh">
+                                            <label class="form-check-label" for="type_xy_lanh">Xy lanh</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" name="product_types" id="type_dien_dung" value="dien_dung">
+                                            <label class="form-check-label" for="type_dien_dung">Điện dung</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="excel_file" class="file-input-label">
+                                    <i class="bi bi-file-earmark-excel"></i>
+                                    <div class="mt-2">File Excel chứa dữ liệu sản phẩm</div>
+                                    <span>Chỉ chấp nhận file .xlsx, .xls</span>
+                                    <input type="file" id="excel_file" name="excel_file" class="d-none" accept=".xlsx, .xls" required onchange="updateFileName(this, 'excel_file_name_filter_types')">
+                                </label>
+                                <div id="excel_file_name_filter_types" class="mb-3"></div>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="bi bi-funnel"></i> Lọc theo loại
                         </button>
                     </form>
                 </div>
@@ -761,9 +764,9 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                         <div class="mb-3">
                             <label for="product_links_file" class="file-input-label">
                                 <i class="bi bi-file-earmark-text fs-3"></i>
-                                <div class="mt-2">File TXT chứa danh sách URL sản phẩm</div>
-                                <span>Chỉ chấp nhận file .txt</span>
-                                <input type="file" id="product_links_file" name="product_links_file" class="d-none" accept=".txt" required>
+                                    <div class="mt-2">File .txt chứa URL sản phẩm</div>
+                                    <span>Mỗi URL trên một dòng</span>
+                                    <input type="file" id="product_links_file" name="product_links_file" class="d-none" accept=".txt" required onchange="updateFileName(this, 'product_links_file_name')">
                             </label>
                             <div id="product_links_file_name" class="mb-3 text-muted"></div>
                         </div>
@@ -809,9 +812,9 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                         <div class="mb-3">
                             <label for="product_links_file_prices" class="file-input-label">
                                 <i class="bi bi-file-earmark-text fs-3"></i>
-                                <div class="mt-2">File TXT chứa danh sách URL sản phẩm</div>
-                                <span>Chỉ chấp nhận file .txt</span>
-                                <input type="file" id="product_links_file_prices" name="product_links_file" class="d-none" accept=".txt" required>
+                                    <div class="mt-2">File .txt chứa URL sản phẩm</div>
+                                    <span>Mỗi URL trên một dòng</span>
+                                    <input type="file" id="product_links_file_prices" name="product_links_file" class="d-none" accept=".txt" required onchange="updateFileName(this, 'product_links_file_prices_name')">
                             </label>
                             <div id="product_links_file_prices_name" class="mb-3 text-muted"></div>
                         </div>
@@ -866,41 +869,43 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
             <!-- Tab cào nhiều danh mục (Dữ liệu) -->
             <div class="tab-pane fade" id="category-scrape" role="tabpanel" aria-labelledby="category-scrape-tab">
                 <div class="form-container">
-                    <h4 class="mb-3">Cào nhiều danh mục (Dữ liệu)</h4>
+                    <h4 class="mb-3">Cào dữ liệu baa.vn</h4>
                     
                     <div class="data-format">
                         <h5>Thông tin về chức năng</h5>
-                        <p>Chức năng này cho phép cào nhiều danh mục và thu thập đầy đủ thông tin sản phẩm (bao gồm tên, mã, giá và thông số kỹ thuật):</p>
+                        <p>Chức năng này cho phép cào nhiều danh mục baa.vn và thu thập đầy đủ thông tin sản phẩm (bao gồm tên, mã, giá, thông số kỹ thuật và ảnh sản phẩm):</p>
                         <ol>
-                            <li>Nhập danh sách các URL danh mục (mỗi URL trên một dòng)</li>
-                            <li>Hệ thống sẽ tự động cào tất cả thông tin sản phẩm từ các danh mục</li>
+                            <li>Nhập danh sách các URL danh mục từ <strong>baa.vn</strong> (mỗi URL trên một dòng)</li>
+                            <li>Hệ thống sẽ áp dụng <strong>xử lý đa luồng</strong> để tự động cào tất cả thông tin sản phẩm và ảnh</li>
                             <li>Kết quả được tổ chức theo từng danh mục và nén thành file ZIP</li>
                         </ol>
                         <div class="alert alert-info mt-3">
-                            <i class="bi bi-info-circle-fill me-2"></i> <strong>Lưu ý:</strong> Chức năng này sẽ mất nhiều thời gian hơn để thực hiện vì cần thu thập đầy đủ thông tin từ mỗi sản phẩm.
+                            <i class="bi bi-info-circle-fill me-2"></i> <strong>Tính năng mới:</strong> Chức năng này sử dụng <strong>đa luồng</strong> để tăng tốc xử lý và tự động tải ảnh sản phẩm từ baa.vn.
                         </div>
                     </div>
                     
                     <div class="steps">
                         <div class="step">
-                            <p>Nhập danh sách các URL danh mục (mỗi URL trên một dòng)</p>
+                            <p>Nhập danh sách các URL danh mục baa.vn (mỗi URL trên một dòng)</p>
+                            <p class="text-muted">Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795</p>
                         </div>
                         <div class="step">
-                            <p>Nhấn nút "Cào thông tin sản phẩm" để bắt đầu quá trình</p>
+                            <p>Nhấn nút "Cào dữ liệu baa.vn" để bắt đầu quá trình</p>
                         </div>
                         <div class="step">
-                            <p>Tải xuống file ZIP chứa đầy đủ thông tin sản phẩm đã được tổ chức theo danh mục</p>
+                            <p>Tải xuống file ZIP chứa đầy đủ thông tin sản phẩm và ảnh đã được tổ chức theo danh mục</p>
                         </div>
                     </div>
 
                     <form action="{{ url_for('main.scrape_category_products') }}" method="post" enctype="multipart/form-data" id="category-scrape-form">
                         <div class="mb-3">
-                            <label for="category_urls_scrape" class="form-label">Danh sách các URL danh mục (mỗi URL trên một dòng):</label>
-                            <textarea id="category_urls_scrape" name="category_urls" class="form-control" rows="10" required placeholder="Nhập URL danh mục vào đây..."></textarea>
+                            <label for="category_urls_scrape" class="form-label">Danh sách các URL danh mục baa.vn (mỗi URL trên một dòng):</label>
+                            <textarea id="category_urls_scrape" name="category_urls" class="form-control" rows="10" required placeholder="Nhập URL danh mục baa.vn vào đây...
+Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                         </div>
                         
                         <button type="submit" class="btn btn-primary w-100">
-                            <i class="bi bi-folder-symlink"></i> Cào thông tin sản phẩm
+                            <i class="bi bi-folder-symlink"></i> Cào dữ liệu baa.vn
                         </button>
                     </form>
                 </div>
@@ -927,385 +932,128 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                     <form action="{{ url_for('main.crawl_codienhaiau') }}" method="post" enctype="multipart/form-data" id="codienhaiau-crawler-form">
                         <div class="mb-3">
                             <label for="codienhaiau_urls" class="form-label">Danh sách các URL danh mục Codienhaiau.com:</label>
-                            <textarea id="codienhaiau_urls" name="category_urls" class="form-control" rows="5" required placeholder="Nhập URL danh mục Codienhaiau.com vào đây... (mỗi URL một dòng)
-Ví dụ: https://codienhaiau.com/category/keyence/cam-bien-keyence/"></textarea>
+                            <textarea id="codienhaiau_urls" name="category_urls" class="form-control" rows="5" required placeholder="Nhập URL danh mục Codienhaiau.com vào đây... (mỗi URL một dòng)"></textarea>
                         </div>
-                        
                         <button type="submit" class="btn btn-primary w-100">
-                            <i class="bi bi-globe"></i> Cào dữ liệu từ Codienhaiau.com
+                            <i class="bi bi-cloud-download"></i> Cào dữ liệu
                         </button>
                     </form>
+                    </div>
+                </div>
+            
+            <!-- Tab cào dữ liệu từ BAA.vn -->
+            <div class="tab-pane fade" id="baa-crawler" role="tabpanel" aria-labelledby="baa-crawler-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Cào dữ liệu sản phẩm từ BAA.vn</h4>
+                    <div class="card mt-3">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0">Cào dữ liệu BAA.vn</h5>
+                        </div>
+                        <div class="card-body">
+                            <form action="{{ url_for('main.crawl_baa') }}" method="post">
+                                <div class="form-group">
+                                    <label for="category_urls">Nhập URL danh mục hoặc sản phẩm (<b>mỗi URL một dòng</b>):</label>
+                                    <textarea class="form-control" id="category_urls" name="category_urls" rows="5" required></textarea>
+                                    <small class="form-text text-muted">Ví dụ: https://baa.vn/camera-lapara, https://baa.vn/chuong-hinh-hikvision</small>
+                                </div>
+                                
+                                <!-- Thêm tùy chọn nâng cao -->
+                                <div class="form-row">
+                                    <div class="form-group col-md-6">
+                                        <label for="max_workers">Số luồng tối đa:</label>
+                                        <select class="form-control" id="max_workers" name="max_workers">
+                                            <option value="4">4 luồng (máy yếu)</option>
+                                            <option value="8" selected>8 luồng (mặc định)</option>
+                                            <option value="12">12 luồng (máy tốt)</option>
+                                            <option value="16">16 luồng (máy mạnh)</option>
+                                        </select>
+                                        <small class="form-text text-muted">Nhiều luồng hơn tăng tốc xử lý nhưng yêu cầu máy tính mạnh hơn</small>
+                                    </div>
+                                    <div class="form-group col-md-6">
+                                        <label for="max_retries">Số lần thử lại tối đa:</label>
+                                        <select class="form-control" id="max_retries" name="max_retries">
+                                            <option value="1">1 lần (nhanh nhất)</option>
+                                            <option value="3" selected>3 lần (mặc định)</option>
+                                            <option value="5">5 lần (chính xác cao)</option>
+                                        </select>
+                                        <small class="form-text text-muted">Nhiều lần thử lại nếu mạng không ổn định</small>
+                                    </div>
+                                </div>
+                                
+                                <button type="submit" class="btn btn-primary">Bắt đầu cào dữ liệu</button>
+                            </form>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Thêm thư viện SocketIO -->
-    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    <!-- Dữ liệu từ Jinja -->
+    <div id="template-data" 
+        data-active-tab="{{ active_tab|default('') }}"
+        data-has-success-message="{% if success_message %}true{% else %}false{% endif %}">
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
+    
     <script>
-        // Kết nối Socket.IO
-        const socket = io();
-        
-        // Lắng nghe sự kiện cập nhật tiến trình
-        socket.on('progress_update', function(data) {
-            // Hiển thị thanh tiến trình
-            const progressContainer = document.getElementById('progress-container');
-            progressContainer.style.display = 'block';
+        // Xử lý khi tài liệu đã tải xong
+        document.addEventListener('DOMContentLoaded', function() {
+            // Lấy dữ liệu từ template
+            const templateData = document.getElementById('template-data');
+            const activeTab = templateData.dataset.activeTab;
+            const hasSuccessMessage = templateData.dataset.hasSuccessMessage === 'true';
             
-            // Cập nhật giá trị thanh tiến trình
-            const progressBar = document.getElementById('progress-bar');
-            progressBar.style.width = data.percent + '%';
-            progressBar.setAttribute('aria-valuenow', data.percent);
-            progressBar.innerText = data.percent + '%';
-            
-            // Cập nhật thông báo
-            const progressMessage = document.getElementById('progress-message');
-            progressMessage.innerText = data.message;
-            
-            // Hiển thị log trong terminal UI nếu có
-            if (data.log) {
-                // Hiển thị trong terminal UI cũ
-                const logTerminal = document.getElementById('log-terminal');
-                if (logTerminal) {
-                    // Định dạng log để hiển thị đẹp hơn
-                    const formattedLog = formatTerminalOutput(data.log);
-                    
-                    // Thêm dòng log mới
-                    const logContent = logTerminal.innerHTML;
-                    // Xóa con trỏ nháy cuối cùng nếu có
-                    const newContent = logContent.replace(/<span class="terminal-cursor"[^>]*>_<\/span>/, '');
-                    // Thêm log mới và con trỏ nháy
-                    logTerminal.innerHTML = newContent + formattedLog + '<br><span class="terminal-cursor" style="background-color: #ccc; color: #000;">_</span>';
-                    
-                    // Cuộn xuống dưới cùng để hiển thị log mới nhất
-                    logTerminal.scrollTop = logTerminal.scrollHeight;
-                }
-                
-                // Hiển thị trong terminal mới cho Codienhaiau - Bỏ điều kiện chỉ hiển thị khi tab được chọn
-                const codienhaiau_terminal = document.getElementById('codienhaiau-terminal');
-                if (codienhaiau_terminal) {
-                    // Phân loại log theo trạng thái để hiển thị màu khác nhau
-                    let formattedLog = formatTerminalOutput(data.log);
-                    
-                    // Xóa con trỏ nháy cuối cùng nếu có
-                    const contentWithoutCursor = codienhaiau_terminal.innerHTML.replace(/<span class="terminal-cursor"[^>]*>_<\/span>/, '');
-                    
-                    // Thêm dòng log mới với định dạng và con trỏ nháy
-                    codienhaiau_terminal.innerHTML = contentWithoutCursor + formattedLog + '<br><span class="terminal-cursor" style="background-color: #ccc; color: #000;">_</span>';
-                    
-                    // Cuộn xuống dưới cùng để hiển thị log mới nhất
-                    codienhaiau_terminal.scrollTop = codienhaiau_terminal.scrollHeight;
-                }
+            // Kích hoạt tab được chỉ định
+            if (activeTab) {
+                activateTab(activeTab);
             }
             
-            // Nếu hoàn thành, xử lý kết thúc sau một khoảng thời gian
-            if (data.percent === 100) {
+            // Kiểm tra trạng thái tiến trình
+            const socket = io();
+            socket.on('progress_update', function(data) {
+                const progressBar = document.getElementById('progress-bar');
+                const progressMessage = document.getElementById('progress-message');
+                const progressDetail = document.getElementById('progress-detail');
+                const progressContainer = document.getElementById('progress-container');
+                
+                progressContainer.classList.remove('d-none');
+                progressBar.style.width = data.percent + '%';
+                progressBar.setAttribute('aria-valuenow', data.percent);
+                progressMessage.textContent = data.message;
+                
+                if (data.detail) {
+                    progressDetail.textContent = data.detail;
+                    progressDetail.classList.remove('d-none');
+                } else {
+                    progressDetail.classList.add('d-none');
+                }
+                
+                // Thay đổi màu sắc thanh tiến trình dựa vào tiến độ
+                if (data.percent < 30) {
+                    progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-info';
+                } else if (data.percent < 70) {
+                    progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-primary';
+                } else if (data.percent < 100) {
+                    progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-success';
+                } else {
+                    progressBar.className = 'progress-bar bg-success';
+                }
+                
+                // Tự động cuộn đến thanh tiến trình
+                progressContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            });
+            
+            // Hiển thị thông báo thành công trong 5 giây
+            if (hasSuccessMessage) {
                 setTimeout(function() {
-                    // Hiển thị thông báo hoàn thành với định dạng đẹp
-                    const logTerminal = document.getElementById('log-terminal');
-                    const codienhaiau_terminal = document.getElementById('codienhaiau-terminal');
-                    
-                    if (logTerminal) {
-                        // Xóa con trỏ nháy cuối cùng nếu có
-                        const contentWithoutCursor = logTerminal.innerHTML.replace(/<span class="terminal-cursor"[^>]*>_<\/span>/, '');
-                        logTerminal.innerHTML = contentWithoutCursor + '<br><span class="terminal-success">[HOÀN THÀNH] Quá trình thu thập dữ liệu đã kết thúc.</span><br><span class="terminal-prompt" style="color: #0cf;">$ </span><span class="terminal-cursor" style="background-color: #ccc; color: #000;">_</span>';
-                        logTerminal.scrollTop = logTerminal.scrollHeight;
+                    const alert = document.getElementById('success-alert');
+                    if (alert) {
+                        alert.style.display = 'none';
                     }
-                    
-                    if (codienhaiau_terminal) {
-                        // Xóa con trỏ nháy cuối cùng nếu có
-                        const contentWithoutCursor = codienhaiau_terminal.innerHTML.replace(/<span class="terminal-cursor"[^>]*>_<\/span>/, '');
-                        codienhaiau_terminal.innerHTML = contentWithoutCursor + '<br><span class="terminal-success">[HOÀN THÀNH] Quá trình thu thập dữ liệu đã kết thúc.</span><br><span class="terminal-prompt" style="color: #0cf;">$ </span><span class="terminal-cursor" style="background-color: #ccc; color: #000;">_</span>';
-                        codienhaiau_terminal.scrollTop = codienhaiau_terminal.scrollHeight;
-                    }
-                }, 1000);
-            }
-        });
-
-        // Thêm sự kiện clear cho terminal
-        document.getElementById('clear-terminal').addEventListener('click', function() {
-            const codienhaiau_terminal = document.getElementById('codienhaiau-terminal');
-            if (codienhaiau_terminal) {
-                codienhaiau_terminal.innerHTML = '<div class="text-success">Terminal đã được xóa. Sẵn sàng cào dữ liệu...</div>';
-            }
-        });
-        
-        // Thêm sự kiện clear cho nút clear-both-terminal 
-        document.getElementById('clear-both-terminal').addEventListener('click', function() {
-            // Xóa terminal codienhaiau
-            const codienhaiau_terminal = document.getElementById('codienhaiau-terminal');
-            if (codienhaiau_terminal) {
-                codienhaiau_terminal.innerHTML = '<span style="color: #0cf;">$ </span><span style="color: #ffcc00;">codienhaiau-crawler --init</span><div class="text-success">Terminal đã được xóa. Sẵn sàng cào dữ liệu...</div><span class="terminal-cursor" style="background-color: #ccc; color: #000;">_</span>';
-            }
-            
-            // Xóa terminal cũ
-            const logTerminal = document.getElementById('log-terminal');
-            if (logTerminal) {
-                logTerminal.innerHTML = '<span class="terminal-prompt" style="color: #0cf;">$ </span><span class="terminal-command" style="color: #ffcc00;">crawler --start</span><br><span style="color: #33ff33;">Terminal đã được xóa. Sẵn sàng cào dữ liệu...</span><span class="terminal-cursor" style="background-color: #ccc; color: #000;">_</span>';
-            }
-        });
-
-        // Chức năng để làm nhấp nháy con trỏ terminal
-        setInterval(function() {
-            const cursors = document.querySelectorAll('.terminal-cursor');
-            for (let i = 0; i < cursors.length; i++) {
-                if (cursors[i].style.visibility === 'hidden') {
-                    cursors[i].style.visibility = 'visible';
-                } else {
-                    cursors[i].style.visibility = 'hidden';
-                }
-            }
-        }, 500); // Nhấp nháy mỗi 500ms
-
-        // Hàm định dạng output terminal để làm cho nó trông giống terminal IDE thực tế
-        function formatTerminalOutput(log) {
-            if (log.includes('[THÀNH CÔNG]') || log.includes('[OK]')) {
-                return '<span class="terminal-success">' + log + '</span>';
-            } else if (log.includes('[LỖI]') || log.includes('[CẢNH BÁO]')) {
-                return '<span class="terminal-error">' + log + '</span>';
-            } else if (log.includes('[PHÂN TÍCH]') || log.includes('[THÔNG TIN]')) {
-                return '<span class="terminal-info">' + log + '</span>';
-            } else if (log.includes('[CRAWLER]')) {
-                return '<span class="terminal-command">' + log + '</span>';
-            } else {
-                return '<span class="terminal-output">' + log + '</span>';
-            }
-        }
-
-        // Hiển thị tên file khi người dùng chọn file
-        document.getElementById('link_file').addEventListener('change', function(e) {
-            if (this.files.length > 0) {
-                document.getElementById('link_file_name').textContent = 'File đã chọn: ' + this.files[0].name;
-            }
-        });
-
-        document.getElementById('product_link_file').addEventListener('change', function(e) {
-            if (this.files.length > 0) {
-                document.getElementById('product_link_file_name').textContent = 'File đã chọn: ' + this.files[0].name;
-            }
-        });
-
-        document.getElementById('excel_template').addEventListener('change', function(e) {
-            if (this.files.length > 0) {
-                document.getElementById('excel_template_name').textContent = 'File đã chọn: ' + this.files[0].name;
-            }
-        });
-
-        document.getElementById('product_code_file').addEventListener('change', function(e) {
-            if (this.files.length > 0) {
-                document.getElementById('product_code_file_name').textContent = 'File đã chọn: ' + this.files[0].name;
-            }
-        });
-        
-        // Hiển thị danh sách các file ảnh đã chọn
-        document.getElementById('image_files').addEventListener('change', function(e) {
-            const fileList = this.files;
-            if (fileList.length > 0) {
-                let fileNames = '';
-                if (fileList.length <= 5) {
-                    // Hiển thị tên tất cả các file nếu có ít hơn 5 file
-                    for (let i = 0; i < fileList.length; i++) {
-                        fileNames += (i > 0 ? '<br>' : '') + (i + 1) + '. ' + fileList[i].name;
-                    }
-                } else {
-                    // Nếu có nhiều hơn 5 file, hiển thị 3 file đầu và thông báo số file còn lại
-                    for (let i = 0; i < 3; i++) {
-                        fileNames += (i > 0 ? '<br>' : '') + (i + 1) + '. ' + fileList[i].name;
-                    }
-                    fileNames += '<br>... và ' + (fileList.length - 3) + ' file khác';
-                }
-                document.getElementById('image_files_name').innerHTML = 'Đã chọn ' + fileList.length + ' file:<br>' + fileNames;
-            } else {
-                document.getElementById('image_files_name').textContent = '';
-            }
-        });
-        
-        // Hiển thị tên file đã chọn cho chức năng tải tài liệu PDF
-        document.getElementById('pdf_product_code_file').addEventListener('change', function(e) {
-            if (this.files.length > 0) {
-                document.getElementById('pdf_product_code_file_name').textContent = 'File đã chọn: ' + this.files[0].name;
-            }
-        });
-        
-        // Hiển thị tên file đã chọn cho chức năng tải ảnh JPG
-        document.getElementById('jpg_product_code_file').addEventListener('change', function(e) {
-            if (this.files.length > 0) {
-                document.getElementById('jpg_product_code_file_name').textContent = 'File đã chọn: ' + this.files[0].name;
-            }
-        });
-        
-        // Hiển thị thanh tiến trình khi gửi form
-        document.getElementById('extract-form').addEventListener('submit', function(e) {
-            const fileInput = document.getElementById('link_file');
-            if (fileInput.files.length > 0) {
-                const progressContainer = document.getElementById('progress-container');
-                progressContainer.style.display = 'block';
-                const progressMessage = document.getElementById('progress-message');
-                progressMessage.innerText = 'Đang tải file lên...';
-            }
-        });
-        
-        document.getElementById('scrape-form').addEventListener('submit', function(e) {
-            const linkFile = document.getElementById('product_link_file');
-            const excelFile = document.getElementById('excel_template');
-            if (linkFile.files.length > 0 && excelFile.files.length > 0) {
-                const progressContainer = document.getElementById('progress-container');
-                progressContainer.style.display = 'block';
-                const progressMessage = document.getElementById('progress-message');
-                progressMessage.innerText = 'Đang tải file lên...';
-            }
-        });
-
-        document.getElementById('images-form').addEventListener('submit', function(e) {
-            const fileInput = document.getElementById('product_code_file');
-            if (fileInput.files.length > 0) {
-                const progressContainer = document.getElementById('progress-container');
-                progressContainer.style.display = 'block';
-                const progressMessage = document.getElementById('progress-message');
-                progressMessage.innerText = 'Đang tải file lên...';
-            }
-        });
-        
-        document.getElementById('convert-form').addEventListener('submit', function(e) {
-            const fileInput = document.getElementById('image_files');
-            if (fileInput.files.length > 0) {
-                const progressContainer = document.getElementById('progress-container');
-                progressContainer.style.display = 'block';
-                const progressMessage = document.getElementById('progress-message');
-                progressMessage.innerText = 'Đang tải ' + fileInput.files.length + ' file ảnh lên...';
-            }
-        });
-        
-        document.getElementById('jpg-images-form').addEventListener('submit', function(e) {
-            const fileInput = document.getElementById('jpg_product_code_file');
-            if (fileInput.files.length > 0) {
-                const progressContainer = document.getElementById('progress-container');
-                progressContainer.style.display = 'block';
-                const progressMessage = document.getElementById('progress-message');
-                progressMessage.innerText = 'Đang tải file lên...';
-            }
-        });
-        
-        document.getElementById('pdf-documents-form').addEventListener('submit', function(e) {
-            const fileInput = document.getElementById('pdf_product_code_file');
-            if (fileInput.files.length > 0) {
-                const progressContainer = document.getElementById('progress-container');
-                progressContainer.style.display = 'block';
-                const progressMessage = document.getElementById('progress-message');
-                progressMessage.innerText = 'Đang tải file lên...';
-            }
-        });
-
-        $(document).ready(function() {
-            // Hiển thị tên file khi chọn file trong tab so sánh mã sản phẩm
-            $('#excel_file_1').change(function() {
-                const fileName = $(this).val().split('\\').pop();
-                $('#excel_file_1_name').text(fileName ? 'File đã chọn: ' + fileName : '');
-            });
-            
-            $('#excel_file_2').change(function() {
-                const fileName = $(this).val().split('\\').pop();
-                $('#excel_file_2_name').text(fileName ? 'File đã chọn: ' + fileName : '');
-            });
-            
-            // Hiển thị thanh tiến trình khi gửi form so sánh sản phẩm
-            $('#compare-products-form').submit(function(e) {
-                const file1 = $('#excel_file_1')[0].files;
-                const file2 = $('#excel_file_2')[0].files;
-                
-                if (file1.length > 0 && file2.length > 0) {
-                    const progressContainer = document.getElementById('progress-container');
-                    progressContainer.style.display = 'block';
-                    const progressMessage = document.getElementById('progress-message');
-                    progressMessage.innerText = 'Đang tải file và so sánh mã sản phẩm...';
-                }
-            });
-        });
-
-        document.getElementById('product_links_file').addEventListener('change', function(e) {
-            if (this.files.length > 0) {
-                document.getElementById('product_links_file_name').textContent = 'File đã chọn: ' + this.files[0].name;
-            }
-        });
-        
-        document.getElementById('extract-prices-form').addEventListener('submit', function(e) {
-            const fileInput = document.getElementById('product_links_file');
-            if (fileInput.files.length > 0) {
-                const progressContainer = document.getElementById('progress-container');
-                progressContainer.style.display = 'block';
-                const progressMessage = document.getElementById('progress-message');
-                progressMessage.innerText = 'Đang tải file và trích xuất giá sản phẩm...';
-            }
-        });
-
-        document.getElementById('product_links_file_prices').addEventListener('change', function(e) {
-            if (this.files.length > 0) {
-                document.getElementById('product_links_file_prices_name').textContent = 'File đã chọn: ' + this.files[0].name;
-            }
-        });
-        
-        document.getElementById('extract-only-prices-form').addEventListener('submit', function(e) {
-            const fileInput = document.getElementById('product_links_file_prices');
-            if (fileInput.files.length > 0) {
-                const progressContainer = document.getElementById('progress-container');
-                progressContainer.style.display = 'block';
-                const progressMessage = document.getElementById('progress-message');
-                progressMessage.innerText = 'Đang tải file và lấy giá sản phẩm...';
-            }
-        });
-
-        document.getElementById('category-extract-form').addEventListener('submit', function(e) {
-            const fileInput = document.getElementById('category_urls');
-            if (fileInput.value.trim() !== '') {
-                const progressContainer = document.getElementById('progress-container');
-                progressContainer.style.display = 'block';
-                const progressMessage = document.getElementById('progress-message');
-                progressMessage.innerText = 'Đang cào thông tin sản phẩm từ các danh mục...';
-            }
-        });
-
-        document.getElementById('category-scrape-form').addEventListener('submit', function(e) {
-            const fileInput = document.getElementById('category_urls_scrape');
-            if (fileInput.value.trim() !== '') {
-                const progressContainer = document.getElementById('progress-container');
-                progressContainer.style.display = 'block';
-                const progressMessage = document.getElementById('progress-message');
-                progressMessage.innerText = 'Đang cào thông tin sản phẩm từ các danh mục...';
-            }
-        });
-
-        document.getElementById('category-baa-images-form').addEventListener('submit', function(e) {
-            const categoryUrls = document.getElementById('category_urls');
-            if (categoryUrls.value.trim() !== '') {
-                const progressContainer = document.getElementById('progress-container');
-                progressContainer.style.display = 'block';
-                const progressMessage = document.getElementById('progress-message');
-                progressMessage.innerText = 'Đang chuẩn bị tải ảnh từ các danh mục...';
-            }
-        });
-        
-        document.getElementById('codienhaiau-crawler-form').addEventListener('submit', function(e) {
-            const categoryUrls = document.getElementById('codienhaiau_urls');
-            if (categoryUrls.value.trim() !== '') {
-                const progressContainer = document.getElementById('progress-container');
-                progressContainer.style.display = 'block';
-                const progressMessage = document.getElementById('progress-message');
-                progressMessage.innerText = 'Đang chuẩn bị cào dữ liệu từ Codienhaiau.com...';
-                
-                // Xóa và hiển thị terminal
-                const codienhaiau_terminal = document.getElementById('codienhaiau-terminal');
-                codienhaiau_terminal.innerHTML = '<span class="terminal-prompt" style="color: #0cf;">$ </span><span class="terminal-command" style="color: #ffcc00;">codienhaiau-crawler --start</span><br>';
-                codienhaiau_terminal.innerHTML += '<span class="terminal-success">[KHỞI ĐỘNG] Quá trình cào dữ liệu từ Codienhaiau.com bắt đầu...</span><br>';
-                codienhaiau_terminal.innerHTML += '<span class="terminal-info">[TIẾN TRÌNH] Đang phân tích URL danh mục...</span><br>';
-                codienhaiau_terminal.innerHTML += '<span class="terminal-cursor" style="background-color: #ccc; color: #000;">_</span>';
-                
-                // Hiển thị và reset terminal cũ
-                const logTerminal = document.getElementById('log-terminal');
-                logTerminal.innerHTML = '<span class="terminal-prompt" style="color: #0cf;">$ </span><span class="terminal-command" style="color: #ffcc00;">crawler --verbose</span><br>';
-                logTerminal.innerHTML += '<span class="terminal-success">[KHỞI ĐỘNG] Quá trình cào dữ liệu từ Codienhaiau.com bắt đầu...</span><br>';
-                logTerminal.innerHTML += '<span class="terminal-info">[THÔNG TIN] Đang tải trang danh mục...</span><br>';
-                logTerminal.innerHTML += '<span class="terminal-cursor" style="background-color: #ccc; color: #000;">_</span>';
+                }, 5000);
             }
         });
     </script>

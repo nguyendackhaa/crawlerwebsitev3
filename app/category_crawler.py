@@ -551,79 +551,43 @@ class CategoryCrawler:
         return product_info_list
     
     def _create_reports(self, result_dir, category_info, valid_urls):
-        """Tạo báo cáo tổng thể"""
+        """Tạo báo cáo tổng hợp cho quá trình thu thập dữ liệu"""
         try:
-            # Cập nhật tiến trình
-            emit_progress(95, f'Đang tạo báo cáo tổng hợp...')
-            
-            # Tạo báo cáo tổng thể các danh mục
-            report_file = os.path.join(result_dir, 'category_report.xlsx')
-            
-            # Tạo DataFrame từ danh sách thông tin danh mục
-            df_categories = pd.DataFrame(category_info)
-            
-            # Tạo một ExcelWriter
+            # Tạo file báo cáo tổng hợp
+            report_file = os.path.join(result_dir, 'tong_hop.xlsx')
+            emit_progress(90, f'Đang tạo báo cáo tổng hợp, vui lòng đợi...')
+            # Tạo DataFrame cho báo cáo tổng hợp
+            df_summary = pd.DataFrame(category_info)
+            # Tạo sheet báo cáo
             with pd.ExcelWriter(report_file, engine='openpyxl') as writer:
-                # Lưu thông tin danh mục vào sheet "Danh mục"
-                df_categories.to_excel(writer, sheet_name='Danh mục', index=False)
-                
-                # Tạo sheet "Thông tin" để lưu các URL đầu vào
-                df_info = pd.DataFrame({'URL': valid_urls})
-                df_info.to_excel(writer, sheet_name='URL đầu vào', index=False)
-                
-                # Cập nhật tiến trình
-                emit_progress(97, f'Đang tổng hợp dữ liệu sản phẩm từ tất cả danh mục...')
-                
-                # Tạo sheet "Tổng hợp sản phẩm" để lưu tất cả sản phẩm từ tất cả danh mục
+                # Sheet danh mục
+                df_summary.to_excel(writer, sheet_name='Danh mục', index=False)
+                # Tìm kiếm file Excel sản phẩm đã tạo trong mỗi thư mục
                 all_products = []
-                for root, dirs, files in os.walk(result_dir):
-                    for file in files:
-                        if file.endswith('_products.xlsx'):
-                            file_path = os.path.join(root, file)
-                            try:
-                                # Đọc file Excel sản phẩm
-                                df_products = pd.read_excel(file_path)
-                                
-                                # Thêm thông tin danh mục
-                                category_name = os.path.basename(root)
-                                df_products['Danh mục'] = category_name
-                                
-                                # Thêm vào danh sách tổng hợp
-                                all_products.append(df_products)
-                            except Exception as e:
-                                print(f"Lỗi khi đọc file {file_path}: {str(e)}")
-                
-                # Nếu có dữ liệu sản phẩm, tạo DataFrame tổng hợp
+                for cat_info in category_info:
+                    try:
+                        cat_name = cat_info['Tên danh mục']
+                        cat_dir = os.path.join(result_dir, secure_filename(cat_name))
+                        excel_file = os.path.join(cat_dir, f'{secure_filename(cat_name)}.xlsx')
+                        if os.path.exists(excel_file):
+                            df_cat = pd.read_excel(excel_file)
+                            # Thêm thông tin danh mục vào mỗi sản phẩm
+                            df_cat['Danh mục'] = cat_name
+                            all_products.append(df_cat)
+                    except Exception as e:
+                        print(f"Lỗi khi đọc file Excel cho danh mục {cat_name}: {str(e)}")
+                # Kết hợp tất cả sản phẩm vào một sheet
                 if all_products:
-                    emit_progress(98, f'Đang định dạng báo cáo tổng hợp...')
-                    
                     df_all_products = pd.concat(all_products, ignore_index=True)
-                    
-                    # Chỉ giữ lại các cột cần thiết với thứ tự xác định
-                    columns_order = [
-                        'STT', 'Danh mục', 'Mã sản phẩm', 'Tên sản phẩm', 'Giá', 
-                        'Mô tả', 'Tổng quan', 'Ảnh sản phẩm', 'Ảnh bổ sung', 'Tài liệu kỹ thuật', 'URL'
-                    ]
-                    
-                    # Lọc các cột hiện có
-                    existing_columns = [col for col in columns_order if col in df_all_products.columns]
-                    
-                    # Thêm các cột khác không có trong danh sách cố định
-                    other_columns = [col for col in df_all_products.columns if col not in columns_order]
-                    final_columns = existing_columns + other_columns
-                    
-                    # Sắp xếp DataFrame theo các cột
-                    df_all_products = df_all_products[final_columns]
-                    
-                    # Sắp xếp lại STT
-                    df_all_products['STT'] = range(1, len(df_all_products) + 1)
-                    
-                    # Lưu vào sheet "Tổng hợp sản phẩm"
+                    # Đưa cột 'Danh mục' lên đầu nếu tồn tại
+                    cols = list(df_all_products.columns)
+                    if 'Danh mục' in cols:
+                        cols.remove('Danh mục')
+                        df_all_products = df_all_products[['Danh mục'] + cols]
+                    # Ghi ra sheet tổng hợp
                     df_all_products.to_excel(writer, sheet_name='Tổng hợp sản phẩm', index=False)
-                    
                     # Định dạng sheet
                     worksheet = writer.sheets['Tổng hợp sản phẩm']
-                    
                     # Điều chỉnh độ rộng cột
                     for idx, col in enumerate(df_all_products.columns):
                         # Đặt độ rộng cột dựa trên loại dữ liệu
@@ -647,13 +611,10 @@ class CategoryCrawler:
                                 len(str(df_all_products[col].iloc[i])) 
                                 for i in range(min(10, len(df_all_products)))
                             ] + [len(col)]))
-                        
                         col_letter = get_column_letter(idx + 1)
                         worksheet.column_dimensions[col_letter].width = max_width
-            
             print(f"Đã tạo báo cáo tổng hợp: {report_file}")
             emit_progress(100, f'Đã hoàn tất thu thập dữ liệu từ {len(valid_urls)} danh mục sản phẩm')
-            
         except Exception as e:
             print(f"Lỗi khi tạo báo cáo: {str(e)}")
             traceback.print_exc()
@@ -662,7 +623,6 @@ class CategoryCrawler:
         """Trích xuất thông tin sản phẩm từ trang codienhaiau.com"""
         try:
             print(f"Đang trích xuất thông tin từ {url}")
-            
             # Khởi tạo kết quả chỉ với các trường cần thiết
             product_info = {
                 'STT': index,
@@ -673,7 +633,6 @@ class CategoryCrawler:
                 'Mô tả': "",
                 'Ảnh sản phẩm': ""
             }
-            
             # Tải nội dung trang với retry
             print(f"  > Đang tải nội dung trang {url}")
             response = None
@@ -694,130 +653,60 @@ class CategoryCrawler:
                     else:
                         print(f"  > Lỗi khi tải {url} sau {self.max_retries} lần thử: {str(e)}")
                         raise
-            
             if not response:
                 raise Exception(f"Không thể tải nội dung từ {url}")
-            
             # Parse HTML
             print(f"  > Đang phân tích HTML từ {url}")
             soup = BeautifulSoup(response.text, 'html.parser')
             print(f"  > Đã phân tích HTML thành công")
-            
             # Trích xuất tên sản phẩm
-            print(f"  > Đang trích xuất tên sản phẩm")
-            name_selectors = [
-                'h1.product_title.entry-title',
-                '.product_title',
-                'h1.entry-title'
-            ]
-            
-            for selector in name_selectors:
-                name_element = soup.select_one(selector)
-                if name_element:
-                    product_info['Tên sản phẩm'] = name_element.text.strip()
-                    break
-            
+            product_name = ""
+            name_element = soup.select_one('h1.mb-0, h1.product-title')
+            if name_element:
+                product_name = name_element.text.strip()
+                print(f"  > Tìm thấy tên sản phẩm: {product_name}")
+                product_info['Tên sản phẩm'] = product_name
             # Trích xuất mã sản phẩm
-            description_selectors = [
-                '.woocommerce-product-details__short-description',
-                '.short-description',
-                '.product-short-description'
-            ]
-            
-            for selector in description_selectors:
-                description = soup.select_one(selector)
-                if description:
-                    # Tìm kiếm mẫu "SKU: xxx" trong nội dung
-                    sku_match = re.search(r'SKU:\s*([A-Za-z0-9\-]+)', description.text)
-                    if sku_match:
-                        product_info['Mã sản phẩm'] = sku_match.group(1).strip()
-                        break
-                    
-                    # Trích xuất mô tả ngắn luôn
-                    product_info['Mô tả'] = description.text.strip()
-            
-            # Nếu không tìm thấy mã trong mô tả, thử tìm trong các phần tử khác
-            if not product_info['Mã sản phẩm']:
-                sku_selectors = [
-                    '.sku',
-                    '.product_meta .sku',
-                    '.product-sku',
-                    'span[itemprop="sku"]'
-                ]
-                
-                for selector in sku_selectors:
-                    sku_element = soup.select_one(selector)
-                    if sku_element:
-                        product_info['Mã sản phẩm'] = sku_element.text.strip()
-                        break
-            
-            # Nếu vẫn không tìm thấy, thử trích xuất từ URL
-            if not product_info['Mã sản phẩm'] and '/product/' in url:
-                # Mã sản phẩm có thể nằm trong URL
-                product_path = url.split('/product/')[1].rstrip('/')
-                if '-' in product_path:
-                    # Giả định mã sản phẩm có thể là chuỗi sau dấu gạch ngang cuối cùng
-                    parts = product_path.split('-')
-                    if parts[-1].upper().startswith(('CN', 'SCM')):
-                        product_info['Mã sản phẩm'] = parts[-1].upper()
-            
+            product_code = ""
+            code_element = soup.select_one('div.text-muted strong')
+            if code_element:
+                product_code = code_element.text.strip()
+                print(f"  > Tìm thấy mã sản phẩm: {product_code}")
+                product_info['Mã sản phẩm'] = product_code
+            # Nếu không tìm được mã sản phẩm từ div.text-muted, thử trích xuất từ source HTML
+            if not product_code:
+                # Tìm mã sản phẩm từ JS hoặc cấu trúc HTML
+                pattern = r'"sku":\s*"([^"]+)"'
+                match = re.search(pattern, str(soup))
+                if match:
+                    product_code = match.group(1)
+                    print(f"  > Tìm thấy mã sản phẩm từ JS: {product_code}")
+                    product_info['Mã sản phẩm'] = product_code
             # Trích xuất giá sản phẩm
-            price_selectors = [
-                'span.woocommerce-Price-amount',
-                '.price .woocommerce-Price-amount',
-                'p.price',
-                '.product-price'
-            ]
-            
-            for selector in price_selectors:
-                price_element = soup.select_one(selector)
-                if price_element:
-                    product_info['Giá'] = price_element.text.strip()
-                    break
-            
-            # Nếu chưa có mô tả chi tiết, thử tìm trong tab Mô tả sản phẩm
-            original_description = ""
-            if not product_info['Mô tả']:
-                description_tab_selectors = [
-                    '#tab-description',
-                    '.woocommerce-Tabs-panel--description',
-                    '.tab-pane.active .content-product-description'
-                ]
+            price_text = ""
+            price_element = soup.select_one('span.price-new')
+            if price_element:
+                price_text = price_element.text.strip()
+                print(f"  > Tìm thấy giá sản phẩm: {price_text}")
+                product_info['Giá'] = price_text
+            # Trích xuất mô tả
+            description = ""
+            description_element = soup.select_one('div.tab-content div.editor-content')
+            if description_element:
+                print(f"  > Tìm thấy phần mô tả sản phẩm")
+                # Loại bỏ các phần tử không cần thiết
+                for img in description_element.find_all('img'):
+                    img.decompose()
                 
-                for selector in description_tab_selectors:
-                    desc_element = soup.select_one(selector)
-                    if desc_element:
-                        # Loại bỏ các script, style không cần thiết
-                        for s in desc_element.select('script, style'):
-                            s.extract()
-                        original_description = desc_element.text.strip()
-                        product_info['Mô tả'] = original_description
-                        break
+                # Lấy HTML của phần mô tả (giữ nguyên định dạng)
+                description = str(description_element)
+                product_info['Mô tả'] = description
             
-            # Kiểm tra xem đã lấy được bảng thông số kỹ thuật từ trang web chưa
-            specs_table_html = None
-            tech_table_selectors = [
-                'table.woocommerce-product-attributes',
-                '.woocommerce-product-attributes',
-                '.shop_attributes',
-                '.product-attributes'
-            ]
-            
-            for selector in tech_table_selectors:
-                tech_table = soup.select_one(selector)
-                if tech_table:
-                    # Tìm thấy bảng thông số kỹ thuật từ trang web, nhưng không dùng
-                    print("Đã tìm thấy bảng thông số kỹ thuật từ trang web, nhưng sẽ sử dụng bảng chuẩn")
-                    break
-            
-            # Luôn tạo bảng thông số kỹ thuật mẫu theo định dạng chuẩn
-            specs_table_html = self._generate_product_spec_table(
-                product_info['Mã sản phẩm'], 
-                product_info['Tên sản phẩm']
-            )
-            
-            # Sử dụng bảng thông số kỹ thuật mẫu
-            product_info['Mô tả'] = specs_table_html
+            # Tạo tổng quan từ bảng thông số kỹ thuật
+            if product_code and product_name:
+                print(f"  > Tạo bảng thông số kỹ thuật")
+                specs_table = self._generate_product_spec_table(product_code, product_name)
+                product_info['Tổng quan'] = specs_table
             
             # Tải và lưu ảnh sản phẩm nếu có thư mục đầu ra
             if output_dir and product_info['Mã sản phẩm']:
@@ -841,8 +730,513 @@ class CategoryCrawler:
             traceback.print_exc()
             return product_info
 
+    def extract_baa_product_info(self, url, index=1, output_dir=None):
+        """Trích xuất thông tin sản phẩm từ trang BAA.vn với khả năng xử lý nội dung ẩn và chuẩn hóa dữ liệu"""
+        try:
+            print(f"Đang trích xuất thông tin từ {url}")
+            
+            # Khởi tạo kết quả với các trường cần thiết
+            product_info = {
+                'STT': index,
+                'URL': url,
+                'Mã sản phẩm': "",
+                'Tên sản phẩm': "",
+                'Giá': "",
+                'Tổng quan': "",
+                'Ảnh sản phẩm': ""
+            }
+            
+            # Tải nội dung trang với retry
+            soup = None
+            for attempt in range(self.max_retries):
+                try:
+                    soup = self._get_soup(url)
+                    if soup:
+                        break
+                except Exception as e:
+                    print(f"  > Lỗi khi tải trang (lần {attempt+1}/{self.max_retries}): {str(e)}")
+                    if attempt < self.max_retries - 1:
+                        time.sleep(1)  # Chờ 1 giây trước khi thử lại
+            
+            if not soup:
+                print(f"  > Không thể tải nội dung trang sau {self.max_retries} lần thử")
+                return product_info
+            
+            # Trích xuất tên sản phẩm
+            product_name_elem = soup.select_one('h1.product__name')
+            if product_name_elem:
+                product_info['Tên sản phẩm'] = product_name_elem.text.strip()
+            
+            # Trích xuất mã sản phẩm
+            product_code_elem = soup.select_one('.product__symbol__value')
+            if product_code_elem:
+                product_info['Mã sản phẩm'] = product_code_elem.text.strip()
+            
+            # Trích xuất giá
+            price_elem = soup.select_one('.product-detail__price-current')
+            if price_elem:
+                product_info['Giá'] = price_elem.text.strip()
+                # Loại bỏ văn bản không cần thiết, chỉ giữ số
+                product_info['Giá'] = re.sub(r'[^\d.,]', '', product_info['Giá'])
+            
+            # Trích xuất thông số kỹ thuật
+            specs_table = soup.select_one('.product-info__contents table')
+            if specs_table:
+                # Chuẩn hóa bảng thông số
+                product_info['Tổng quan'] = self._normalize_baa_specs(specs_table)
+            else:
+                desc_elem = soup.select_one('.product-info__contents, .product-detail__description')
+                if desc_elem:
+                    product_info['Tổng quan'] = str(desc_elem)
+            
+            # Xử lý ảnh sản phẩm
+            if output_dir and product_info['Mã sản phẩm']:
+                # Tạo thư mục Anh nếu chưa tồn tại
+                images_dir = os.path.join(output_dir, "Anh")
+                os.makedirs(images_dir, exist_ok=True)
+                
+                # Tìm ảnh sản phẩm
+                img_urls = []
+                main_img = soup.select_one('.product-detail__photo img, .product__gallery img')
+                if main_img and main_img.get('src'):
+                    img_urls.append(main_img['src'])
+                
+                # Tìm thêm ảnh từ gallery nếu có
+                gallery_imgs = soup.select('.product__gallery img, .product-detail__gallery img')
+                for img in gallery_imgs:
+                    if img.get('src') and img['src'] not in img_urls:
+                        img_urls.append(img['src'])
+                
+                # Tải ảnh và lưu vào thư mục
+                if img_urls:
+                    img_url = img_urls[0]  # Lấy ảnh đầu tiên
+                    try:
+                        # Đảm bảo URL ảnh đầy đủ
+                        if not img_url.startswith(('http://', 'https://')):
+                            # Nếu URL tương đối, tạo URL đầy đủ
+                            base_url = urlparse(url).scheme + '://' + urlparse(url).netloc
+                            img_url = urljoin(base_url, img_url)
+                        
+                        # Tải ảnh và lưu
+                        img_path = os.path.join(images_dir, f"{product_info['Mã sản phẩm']}.webp")
+                        response = requests.get(img_url, timeout=10)
+                        if response.status_code == 200:
+                            # Chuyển đổi sang WebP
+                            from PIL import Image
+                            from io import BytesIO
+                            
+                            image = Image.open(BytesIO(response.content))
+                            if image.mode in ("RGBA", "P"):
+                                image = image.convert("RGB")
+                            
+                            image.save(img_path, "WEBP", quality=90)
+                            product_info['Ảnh sản phẩm'] = img_path
+                            print(f"  > Đã lưu ảnh sản phẩm: {img_path}")
+                    except Exception as e:
+                        print(f"  > Lỗi khi tải ảnh: {str(e)}")
+                        # Vẫn lưu URL ảnh nếu có lỗi khi tải
+                        product_info['Ảnh sản phẩm'] = img_url
+                else:
+                    print(f"  > Không tìm thấy ảnh cho sản phẩm: {product_info['Mã sản phẩm']}")
+            
+            print(f"Đã trích xuất thông tin sản phẩm: {product_info['Tên sản phẩm']}, Mã: {product_info['Mã sản phẩm']}, Giá: {product_info['Giá']}")
+            return product_info
+            
+        except Exception as e:
+            print(f"Lỗi khi trích xuất thông tin từ {url}: {str(e)}")
+            traceback.print_exc()
+            return product_info
+    
+    def _normalize_baa_specs(self, specs_table):
+        """Chuẩn hóa bảng thông số kỹ thuật từ BAA.vn, bao gồm cả nội dung ẩn"""
+        try:
+            rows = []
+            
+            # Trích xuất tất cả các hàng từ bảng
+            for tr in specs_table.select('tr'):
+                tds = tr.find_all(['td', 'th'])
+                if len(tds) >= 2:
+                    param = tds[0].get_text(strip=True)
+                    value_td = tds[1]
+                    
+                    # Xử lý nội dung ẩn (thường có class moreellipses và morecontent)
+                    visible_text = value_td.get_text(" ", strip=True)
+                    
+                    # Tìm nội dung ẩn nếu có
+                    hidden_content = value_td.select_one('.morecontent span')
+                    if hidden_content:
+                        hidden_text = hidden_content.get_text(" ", strip=True)
+                        if hidden_text and hidden_text not in visible_text:
+                            # Loại bỏ [...] và thay thế bằng nội dung đầy đủ
+                            visible_text = visible_text.replace('[...]', '').strip() + ' ' + hidden_text
+                    
+                    rows.append((param, visible_text.strip()))
+            
+            # Thêm dòng Copyright vào cuối bảng
+            rows.append(("Copyright", "Haiphongtech.vn"))
+            
+            # Tạo HTML table chuẩn
+            html = '<table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; font-family: Arial;"><thead><tr><th>Thông số</th><th>Giá trị</th></tr></thead><tbody>'
+            for param, value in rows:
+                html += f'<tr><td>{param}</td><td>{value}</td></tr>'
+            html += '</tbody></table>'
+            
+            return html
+        except Exception as e:
+            print(f"Lỗi khi chuẩn hóa bảng thông số: {str(e)}")
+            if specs_table:
+                return str(specs_table)
+            return ""
+    
+    def process_baa_categories(self, category_urls_text):
+        """Xử lý danh sách các URL danh mục từ BAA.vn và trích xuất thông tin sản phẩm"""
+        try:
+            # Tách danh sách URL thành các dòng riêng biệt
+            category_urls = [url.strip() for url in category_urls_text.splitlines() if url.strip()]
+            
+            # Kiểm tra tính hợp lệ của URL
+            valid_urls = []
+            for url in category_urls:
+                if url.startswith(('http://', 'https://')) and ('baa.vn' in url):
+                    valid_urls.append(url)
+            
+            if not valid_urls:
+                return False, "Không có URL danh mục BAA.vn hợp lệ nào", None
+            
+            # Tạo thư mục đầu ra với timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            result_dir = os.path.join(self.upload_folder, f'baa_products_{timestamp}')
+            os.makedirs(result_dir, exist_ok=True)
+            
+            # Tạo thư mục cho báo cáo tổng hợp
+            report_dir = os.path.join(result_dir, "Bao_cao")
+            os.makedirs(report_dir, exist_ok=True)
+            
+            # File Excel tổng hợp
+            total_report_path = os.path.join(report_dir, "Tong_hop.xlsx")
+            
+            # Theo dõi tiến trình tổng thể
+            update_progress(5, f"Bắt đầu xử lý {len(valid_urls)} danh mục từ BAA.vn")
+            
+            # Xử lý đa luồng cho các danh mục
+            category_info = []
+            max_workers = min(8, len(valid_urls))
+            
+            def process_category(category_url, index):
+                try:
+                    # Trích xuất tên danh mục từ URL hoặc nội dung trang
+                    category_name = self._extract_category_name(category_url)
+                    category_progress_base = 5 + (index * 90 / len(valid_urls))
+                    
+                    update_progress(category_progress_base, f"Đang xử lý danh mục {index+1}/{len(valid_urls)}: {category_name}")
+                    
+                    # Tạo thư mục cho danh mục
+                    category_dir = os.path.join(result_dir, category_name)
+                    os.makedirs(category_dir, exist_ok=True)
+                    
+                    # Tạo thư mục cho ảnh sản phẩm
+                    images_dir = os.path.join(category_dir, "Anh")
+                    os.makedirs(images_dir, exist_ok=True)
+                    
+                    # Phát hiện và xử lý trang phân trang
+                    max_pages = self._get_max_pages_for_baa_category(category_url)
+                    product_links = []
+                    
+                    update_progress(category_progress_base + 5, f"Đang thu thập liên kết sản phẩm từ {max_pages} trang của danh mục {category_name}")
+                    
+                    # Thu thập tất cả link sản phẩm từ tất cả trang
+                    for page in range(1, max_pages + 1):
+                        page_url = category_url
+                        if page > 1:
+                            # Xây dựng URL phân trang của BAA.vn
+                            page_url = self._make_baa_pagination_url(category_url, page)
+                        
+                        # Lấy soup cho trang hiện tại
+                        soup = self._get_soup(page_url)
+                        if not soup:
+                            continue
+                        
+                        # Trích xuất link sản phẩm từ trang hiện tại
+                        page_links = self._extract_baa_links(soup, page_url)
+                        if page_links:
+                            product_links.extend(page_links)
+                        
+                        update_progress(category_progress_base + 5 + (page * 10 / max_pages),
+                                      f"Đã thu thập {len(product_links)} liên kết từ trang {page}/{max_pages} của danh mục {category_name}")
+                    
+                    # Loại bỏ các link trùng lặp
+                    product_links = list(dict.fromkeys(product_links))
+                    
+                    # Lưu danh sách URL sản phẩm
+                    self._save_product_links(category_dir, category_name, product_links)
+                    
+                    update_progress(category_progress_base + 20, 
+                                  f"Đã thu thập {len(product_links)} liên kết sản phẩm từ danh mục {category_name}. Bắt đầu trích xuất thông tin...")
+                    
+                    # Thu thập thông tin sản phẩm với xử lý đa luồng
+                    product_info_list = []
+                    results_queue = queue.Queue()
+                    errors_queue = queue.Queue()
+                    
+                    # Chia thành các batch nhỏ hơn để cập nhật tiến độ thường xuyên
+                    batch_size = max(1, min(20, len(product_links) // 5))  # Tối đa 20 sản phẩm mỗi batch
+                    batches = [product_links[i:i+batch_size] for i in range(0, len(product_links), batch_size)]
+                    
+                    for batch_idx, batch in enumerate(batches):
+                        batch_progress_base = category_progress_base + 20 + (batch_idx * 50 / len(batches))
+                        update_progress(batch_progress_base, 
+                                      f"Đang xử lý batch {batch_idx+1}/{len(batches)} ({len(batch)} sản phẩm) từ danh mục {category_name}")
+                        
+                        # Xử lý đa luồng cho mỗi batch
+                        threads = []
+                        for i, product_url in enumerate(batch):
+                            thread = threading.Thread(
+                                target=self._download_product_info_worker,
+                                args=(product_url, i + batch_idx * batch_size + 1, category_dir, False, results_queue, errors_queue)
+                            )
+                            threads.append(thread)
+                            thread.start()
+                        
+                        # Theo dõi tiến độ xử lý batch hiện tại
+                        processed = 0
+                        while processed < len(batch):
+                            if not results_queue.empty():
+                                result = results_queue.get()
+                                product_info_list.append(result)
+                                processed += 1
+                                # Cập nhật tiến độ
+                                update_progress(batch_progress_base + (processed * 50 / len(batch) / len(batches)),
+                                              f"Đã xử lý {len(product_info_list)}/{len(product_links)} sản phẩm từ danh mục {category_name}")
+                            
+                            # Kiểm tra các lỗi
+                            while not errors_queue.empty():
+                                error = errors_queue.get()
+                                print(f"Lỗi khi xử lý sản phẩm: {error}")
+                            
+                            time.sleep(0.1)  # Tránh CPU quá tải
+                        
+                        # Đảm bảo tất cả các thread trong batch đã hoàn thành
+                        for thread in threads:
+                            thread.join()
+                    
+                    # Tạo báo cáo Excel cho danh mục này
+                    category_excel_path = os.path.join(category_dir, f"{category_name}.xlsx")
+                    
+                    if product_info_list:
+                        df = pd.DataFrame(product_info_list)
+                        df.to_excel(category_excel_path, index=False)
+                    
+                    # Thêm vào thông tin danh mục
+                    return {
+                        'tên': category_name,
+                        'url': category_url,
+                        'đường dẫn': category_dir,
+                        'số sản phẩm': len(product_links),
+                        'đã xử lý': len(product_info_list),
+                        'báo cáo': category_excel_path,
+                        'sản phẩm': product_info_list
+                    }
+                    
+                except Exception as e:
+                    print(f"Lỗi khi xử lý danh mục {category_url}: {str(e)}")
+                    traceback.print_exc()
+                    return {
+                        'tên': self._extract_category_name(category_url),
+                        'url': category_url,
+                        'lỗi': str(e),
+                        'số sản phẩm': 0,
+                        'đã xử lý': 0,
+                        'sản phẩm': []
+                    }
+            
+            # Xử lý các danh mục
+            all_results = []
+            all_products = []
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_url = {executor.submit(process_category, url, i): url for i, url in enumerate(valid_urls)}
+                
+                for future in concurrent.futures.as_completed(future_to_url):
+                    url = future_to_url[future]
+                    try:
+                        result = future.result()
+                        if result:
+                            all_results.append(result)
+                            if 'sản phẩm' in result and result['sản phẩm']:
+                                all_products.extend(result['sản phẩm'])
+                    except Exception as e:
+                        print(f"Lỗi khi xử lý {url}: {str(e)}")
+            
+            update_progress(95, f"Đã xử lý {len(all_results)} danh mục. Đang tạo báo cáo tổng hợp...")
+            
+            # Tạo báo cáo tổng hợp
+            if all_products:
+                df_all = pd.DataFrame(all_products)
+                df_all.to_excel(total_report_path, index=False)
+            
+            # Tạo báo cáo tổng quan
+            summary_data = []
+            for result in all_results:
+                summary_data.append({
+                    'Tên danh mục': result.get('tên', 'N/A'),
+                    'URL danh mục': result.get('url', 'N/A'),
+                    'Số sản phẩm': result.get('số sản phẩm', 0),
+                    'Số sản phẩm đã xử lý': result.get('đã xử lý', 0),
+                    'Tỷ lệ thành công': f"{result.get('đã xử lý', 0) * 100 / result.get('số sản phẩm', 1):.2f}%" if result.get('số sản phẩm', 0) > 0 else "0%"
+                })
+            
+            if summary_data:
+                summary_path = os.path.join(report_dir, "Tong_quan.xlsx")
+                pd.DataFrame(summary_data).to_excel(summary_path, index=False)
+            
+            # Nén kết quả
+            update_progress(98, "Đang nén kết quả thành file ZIP...")
+            
+            zip_filename = f'baa_products_{timestamp}.zip'
+            zip_path = os.path.join(self.upload_folder, zip_filename)
+            
+            # Nén toàn bộ thư mục kết quả
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for root, dirs, files in os.walk(result_dir):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, self.upload_folder)
+                        zipf.write(file_path, arcname)
+            
+            total_products = sum(result.get('số sản phẩm', 0) for result in all_results)
+            processed_products = sum(result.get('đã xử lý', 0) for result in all_results)
+            
+            update_progress(100, f"Hoàn thành! Đã xử lý {processed_products}/{total_products} sản phẩm từ {len(valid_urls)} danh mục")
+            
+            return True, f"Đã cào thành công {processed_products}/{total_products} sản phẩm từ {len(valid_urls)} danh mục BAA.vn", zip_path
+        
+        except Exception as e:
+            error_message = str(e)
+            print(f"Lỗi khi xử lý danh mục BAA.vn: {error_message}")
+            traceback.print_exc()
+            return False, f"Lỗi: {error_message}", None
+    
+    def _get_max_pages_for_baa_category(self, category_url):
+        """Phát hiện số trang tối đa cho danh mục BAA.vn"""
+        try:
+            # Lấy nội dung trang
+            soup = self._get_soup(category_url)
+            if not soup:
+                return 1
+            
+            # Tìm các thành phần phân trang
+            pagination = soup.select_one('.pagination, .page-list, nav[aria-label="Page navigation"]')
+            if not pagination:
+                return 1
+            
+            # Tìm số trang lớn nhất
+            max_page = 1
+            page_links = pagination.select('a.page-link')
+            
+            for link in page_links:
+                text = link.get_text(strip=True)
+                # Thử chuyển đổi văn bản thành số
+                try:
+                    page_num = int(text)
+                    max_page = max(max_page, page_num)
+                except ValueError:
+                    pass
+            
+            return max(max_page, 1)
+        except Exception as e:
+            print(f"Lỗi khi xác định số trang tối đa: {str(e)}")
+            return 1
+    
+    def _make_baa_pagination_url(self, base_url, page_number):
+        """Tạo URL phân trang cho BAA.vn"""
+        try:
+            # Phân tích URL gốc
+            parsed_url = urlparse(base_url)
+            path = parsed_url.path
+            query = parsed_url.query
+            
+            # Kiểm tra xem URL đã có tham số page chưa
+            params = {}
+            if query:
+                for param in query.split('&'):
+                    if '=' in param:
+                        key, value = param.split('=', 1)
+                        params[key] = value
+            
+            # Cập nhật tham số page
+            params['page'] = str(page_number)
+            
+            # Tạo query string mới
+            new_query = '&'.join([f"{key}={value}" for key, value in params.items()])
+            
+            # Tạo URL mới
+            new_url = f"{parsed_url.scheme}://{parsed_url.netloc}{path}?{new_query}"
+            return new_url
+        except Exception as e:
+            print(f"Lỗi khi tạo URL phân trang: {str(e)}")
+            # Nếu có lỗi, thử thêm ?page=X vào cuối URL
+            if '?' in base_url:
+                return f"{base_url}&page={page_number}"
+            else:
+                return f"{base_url}?page={page_number}"
+            
+    def _extract_baa_links(self, soup, current_url):
+        """Trích xuất các liên kết sản phẩm từ trang danh mục BAA.vn"""
+        try:
+            links = []
+            
+            # Tìm các thẻ sản phẩm
+            product_cards = soup.select('.product-item, .product-card, .item-product')
+            
+            if not product_cards:
+                # Tìm kiếm theo cách khác nếu không tìm thấy card sản phẩm
+                product_links = soup.select('a.product-name, .product-title > a, .item-name > a')
+                for link in product_links:
+                    href = link.get('href')
+                    if href:
+                        full_url = self._make_full_url(href, current_url)
+                        if full_url and self._is_baa_product_url(full_url):
+                            links.append(full_url)
+            else:
+                # Xử lý từng card sản phẩm
+                for card in product_cards:
+                    # Tìm liên kết trong card
+                    link = card.select_one('a.product-name, .product-title > a, h3 > a, .item-name > a')
+                    if link and link.get('href'):
+                        href = link.get('href')
+                        full_url = self._make_full_url(href, current_url)
+                        if full_url and self._is_baa_product_url(full_url):
+                            links.append(full_url)
+            
+            # Loại bỏ các URL trùng lặp
+            return list(dict.fromkeys(links))
+        except Exception as e:
+            print(f"Lỗi khi trích xuất liên kết từ {current_url}: {str(e)}")
+            return []
+    
+    def _is_baa_product_url(self, url):
+        """Kiểm tra xem URL có phải là URL sản phẩm BAA.vn không"""
+        try:
+            if not url or not isinstance(url, str):
+                return False
+            
+            # Kiểm tra URL có phải từ BAA.vn không
+            if 'baa.vn' not in url:
+                return False
+            
+            # Kiểm tra URL có chứa các dấu hiệu của URL sản phẩm không
+            product_indicators = ['/san-pham/', '/product/', '/p/']
+            
+            for indicator in product_indicators:
+                if indicator in url:
+                    return True
+            
+            return False
+        except Exception:
+            return False
+
     def _generate_product_spec_table(self, product_code, product_name):
-        """Tạo bảng thông số kỹ thuật mẫu cho sản phẩm Autonics dựa trên mã sản phẩm"""
+        """Tạo bảng thông số kỹ thuật cho sản phẩm"""
         table_html = '<table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; font-family: Arial;"><thead><tr><th>Thông số</th><th>Giá trị</th></tr></thead><tbody>'
         
         # Xác định loại sản phẩm dựa trên mã sản phẩm
