@@ -2455,349 +2455,210 @@ def get_random_headers():
     }
     return headers
 
-def download_baa_product_images(product_urls, output_folder=None):
-    """
-    Tải ảnh từ các sản phẩm BAA.vn và chuyển sang WebP kích thước gốc
+def download_baa_product_images(url_file, output_folder):
+    """Tải ảnh sản phẩm từ BAA.vn dựa trên file URL"""
+    results = []
     
-    Args:
-        product_urls: Danh sách URL sản phẩm cần tải ảnh
-        output_folder: Thư mục lưu ảnh (tạo tự động nếu không có)
-        
-    Returns:
-        dict: Kết quả tải ảnh
-            - 'total': Tổng số URL được xử lý
-            - 'success': Số lượng tải thành công
-            - 'failed': Số lượng tải thất bại
-            - 'image_paths': Danh sách đường dẫn ảnh đã tải
-    """
-    # Import các thư viện cần thiết
-    import pandas as pd
-    from datetime import datetime
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
     
-    # Tạo thư mục lưu nếu chưa có
-    if output_folder is None:
-        output_folder = 'baa_images'
-        
-    os.makedirs(output_folder, exist_ok=True)
+    # Đọc danh sách URL từ file
+    with open(url_file, 'r', encoding='utf-8') as f:
+        urls = [line.strip() for line in f.readlines() if line.strip()]
     
-    # Khởi tạo kết quả
-    results = {
-        'total': len(product_urls),
-        'success': 0,
-        'failed': 0,
-        'image_paths': [],
-        'report_data': []  # Dữ liệu báo cáo Excel
-    }
+    total_urls = len(urls)
+    print(f"Tổng số URL cần xử lý: {total_urls}")
     
-    # Headers để tránh bị chặn
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Cache-Control': 'max-age=0',
-    }
-    
-    # Các mẫu regex để tìm thông tin sản phẩm
-    product_code_pattern = re.compile(r'([A-Za-z0-9-]+)', re.IGNORECASE)
-    
-    # Xử lý từng URL sản phẩm
-    for index, url in enumerate(product_urls):
-        # Khởi tạo các biến lưu thông tin cho báo cáo
-        report_item = {
-            'STT': index + 1,
-            'URL': url,
-            'Mã sản phẩm': '',
-            'Trạng thái': 'Thất bại',
-            'Lý do lỗi': '',
-            'Đường dẫn ảnh': '',
-            'Kích thước ảnh': '',
-            'Thời gian xử lý': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        }
-        
+    # Truy cập từng URL và tải ảnh
+    for index, url in enumerate(urls, 1):
+        print(f"[{index}/{total_urls}] Đang xử lý: {url}")
         try:
-            # Bỏ qua URL không hợp lệ
-            if not url.strip() or not url.startswith('http'):
-                results['failed'] += 1
-                report_item['Lý do lỗi'] = 'URL không hợp lệ'
-                results['report_data'].append(report_item)
-                print(f"Bỏ qua URL không hợp lệ: {url}")
-                continue
-                
-            print(f"Đang xử lý [{index+1}/{results['total']}]: {url}")
+            # Tải nội dung trang
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
             
-            # Gửi yêu cầu HTTP
-            response = requests.get(url, headers=headers, timeout=30)
-            response.raise_for_status()
+            # Thử tải trang nhiều lần nếu có lỗi
+            for attempt in range(3):
+                try:
+                    response = requests.get(url, headers=headers, timeout=30)
+                    response.raise_for_status()
+                    break
+                except (requests.RequestException, Exception) as e:
+                    print(f"  > Lỗi khi tải trang ({attempt+1}/3): {str(e)}")
+                    if attempt == 2:  # Lần thử cuối cùng
+                        raise
+                    time.sleep(2)
             
-            # Phân tích HTML
+            # Tạo soup
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Lấy mã sản phẩm từ URL
+            # Trích xuất mã sản phẩm từ URL
             product_code = ""
             try:
-                url_parts = url.split('_')
-                if len(url_parts) > 1 and url_parts[-1].isdigit():
-                    name_parts = url_parts[-2].split('-')
-                    if len(name_parts) > 0:
-                        product_code = name_parts[-1].upper()
-                        print(f"  Mã sản phẩm từ URL: {product_code}")
-            except:
-                pass
+                # Thử trích xuất mã sản phẩm từ trang web
+                product_code_element = soup.select_one('span.product__symbol__value')
+                if product_code_element:
+                    product_code = product_code_element.get_text(strip=True)
+                    print(f"  > Trích xuất mã sản phẩm từ span.product__symbol__value: {product_code}")
+                else:
+                    # Hoặc trích xuất từ URL nếu không tìm thấy trong trang
+                    if "_" in url:
+                        product_code = url.split('_')[-1].split('/')[-1]
+                    else:
+                        product_code = url.split('/')[-1]
+                    print(f"  > Trích xuất mã sản phẩm từ URL: {product_code}")
+            except Exception as e:
+                print(f"  > Lỗi khi trích xuất mã sản phẩm: {str(e)}")
+                # Sử dụng URL làm mã sản phẩm trong trường hợp lỗi
+                product_code = url.split('/')[-1]
             
-            # Nếu không lấy được từ URL, thử lấy từ H1
-            if not product_code:
-                h1_text = soup.find('h1')
-                if h1_text:
-                    h1_text = h1_text.text.strip()
-                    h1_match = product_code_pattern.search(h1_text)
-                    if h1_match:
-                        product_code = h1_match.group(1)
-                        print(f"  Mã sản phẩm từ H1: {product_code}")
+            print(f"  > Mã sản phẩm: {product_code}")
             
-            # Nếu vẫn không tìm được mã, dùng timestamp làm mã
-            if not product_code:
-                product_code = f"unknown-{int(time.time())}"
-                print(f"  Không thể xác định mã sản phẩm, sử dụng: {product_code}")
+            # Tìm ảnh sản phẩm
+            image_url = None
             
-            # Cập nhật mã sản phẩm cho báo cáo
-            report_item['Mã sản phẩm'] = product_code
+            # Thử tìm ảnh từ div.modal-body-image với các class cụ thể
+            print(f"  > Đang tìm div.modal-body-image với các class")
+            modal_div = soup.select_one('div.modal-body-image.position-absolute.w-100.h-100.d-none.active')
+            if modal_div:
+                print(f"  > Tìm thấy div.modal-body-image.position-absolute.w-100.h-100.d-none.active")
+                # Trích xuất URL ảnh từ thuộc tính style
+                style = modal_div.get('style', '')
+                if 'background-image' in style:
+                    image_url_match = re.search(r'url\([\'"]?(.*?)[\'"]?\)', style)
+                    if image_url_match:
+                        image_url = image_url_match.group(1)
+                        print(f"  > Trích xuất được URL ảnh từ style: {image_url}")
             
-            # Tìm các hình ảnh sản phẩm
-            images_found = False
-            image_urls = []
-            img_sizes = []  # Lưu kích thước ảnh
+            # Nếu không tìm được từ selector cụ thể, thử tìm bất kỳ div.modal-body-image nào
+            if not image_url:
+                print(f"  > Không tìm thấy div với class đầy đủ, thử tìm bất kỳ div.modal-body-image nào")
+                modal_divs = soup.select('div.modal-body-image')
+                for div in modal_divs:
+                    style = div.get('style', '')
+                    if 'background-image' in style:
+                        image_url_match = re.search(r'url\([\'"]?(.*?)[\'"]?\)', style)
+                        if image_url_match:
+                            image_url = image_url_match.group(1)
+                            print(f"  > Trích xuất được URL ảnh từ div.modal-body-image: {image_url}")
+                            break
             
-            # PHƯƠNG PHÁP 1: TÌM TRONG THẺ DIV.MODAL-BODY-IMAGE.ACTIVE (ƯU TIÊN CAO NHẤT)
-            # Tìm div.modal-body-image.active
-            active_modal = soup.select_one('div.modal-body-image.active')
-            if active_modal:
-                # Tìm trực tiếp thẻ img bên trong
-                img_tag = active_modal.find('img')
-                if img_tag and img_tag.get('src'):
-                    src = img_tag.get('src')
-                    if src and src.strip() and not 'LOGO-BAA' in src:
-                        # Kiểm tra xem có phải ảnh đã resize không
-                        if '/ResizeHinhAnh.ashx' in src:
-                            # Trích xuất đường dẫn gốc từ tham số fileName
-                            original_path_match = re.search(r'fileName=([^&]+)', src)
-                            if original_path_match:
-                                original_path = original_path_match.group(1)
-                                # Chuyển đổi URL encoding nếu cần
-                                original_path = original_path.replace('%2F', '/')
-                                # Thay đổi kích thước thành 800px nếu có thể
-                                full_size_url = re.sub(r'/\d+/', '/800/', original_path)
-                                image_urls.append(full_size_url)
-                                print(f"  ✓ Tìm thấy ảnh gốc từ div.modal-body-image.active: {full_size_url}")
-                            else:
-                                image_urls.append(src)
-                                print(f"  ✓ Tìm thấy ảnh trong div.modal-body-image.active (không thể lấy ảnh gốc): {src}")
-                        else:
-                            # Kiểm tra và chuyển đổi sang kích thước đầy đủ nếu có số trong đường dẫn
-                            full_size_url = re.sub(r'/(\d+)/', '/800/', src)
-                            image_urls.append(full_size_url)
-                            print(f"  ✓ Tìm thấy ảnh trong div.modal-body-image.active: {full_size_url}")
+            # Nếu không tìm thấy từ div.modal-body-image, thử tìm từ img.btn-image-view-360
+            if not image_url:
+                print(f"  > Không tìm thấy ảnh từ div.modal-body-image, thử tìm từ img.btn-image-view-360")
+                img_element = soup.select_one('img.btn-image-view-360')
+                if img_element:
+                    image_url = img_element.get('src')
+                    # Thay đổi kích thước ảnh (từ nhỏ sang lớn)
+                    image_url = image_url.replace('/s/', '/l/')
+                    print(f"  > Tìm thấy ảnh từ img.btn-image-view-360: {image_url}")
             
-            # PHƯƠNG PHÁP 2: TÌM TRONG TẤT CẢ CÁC DIV.MODAL-BODY-IMAGE
-            if not image_urls:
-                modal_images = soup.select('div.modal-body-image')
-                for modal in modal_images:
-                    img_tag = modal.find('img')
-                    if img_tag and img_tag.get('src'):
-                        src = img_tag.get('src')
-                        if src and src.strip() and not 'LOGO-BAA' in src:
-                            # Kiểm tra xem có phải ảnh đã resize không
-                            if '/ResizeHinhAnh.ashx' in src:
-                                # Trích xuất đường dẫn gốc từ tham số fileName
-                                original_path_match = re.search(r'fileName=([^&]+)', src)
-                                if original_path_match:
-                                    original_path = original_path_match.group(1)
-                                    # Chuyển đổi URL encoding nếu cần
-                                    original_path = original_path.replace('%2F', '/')
-                                    # Thay đổi kích thước thành 800px nếu có thể
-                                    full_size_url = re.sub(r'/\d+/', '/800/', original_path)
-                                    image_urls.append(full_size_url)
-                                    print(f"  ✓ Tìm thấy ảnh gốc từ div.modal-body-image: {full_size_url}")
-                                else:
-                                    image_urls.append(src)
-                                    print(f"  ✓ Tìm thấy ảnh trong div.modal-body-image (không thể lấy ảnh gốc): {src}")
-                            else:
-                                # Kiểm tra và chuyển đổi sang kích thước đầy đủ nếu có số trong đường dẫn
-                                full_size_url = re.sub(r'/(\d+)/', '/800/', src)
-                                image_urls.append(full_size_url)
-                                print(f"  ✓ Tìm thấy ảnh trong div.modal-body-image: {full_size_url}")
+            # Thử tìm từ các img khác
+            if not image_url:
+                print(f"  > Không tìm thấy ảnh từ selector cụ thể, tìm ảnh đầu tiên phù hợp")
+                img_elements = soup.select('img.img-fluid')
+                for img in img_elements:
+                    src = img.get('src')
+                    if src and ('product' in src.lower() or 'prod_img' in src.lower()):
+                        image_url = src
+                        # Thay đổi kích thước ảnh (từ nhỏ sang lớn)
+                        image_url = image_url.replace('/s/', '/l/')
+                        print(f"  > Tìm thấy ảnh từ img.img-fluid: {image_url}")
+                        break
             
-            # Nếu không tìm thấy ảnh từ modal-body-image, thử các phương pháp khác
+            # Nếu vẫn không tìm thấy, thử tìm bất kỳ ảnh nào
+            if not image_url:
+                print(f"  > Không tìm thấy ảnh từ các selector cụ thể, tìm bất kỳ ảnh nào")
+                img_elements = soup.select('img')
+                for img in img_elements:
+                    src = img.get('src')
+                    if src and ('product' in src.lower() or 'prod_img' in src.lower() or '/img/' in src.lower()):
+                        image_url = src
+                        # Thay đổi kích thước ảnh (từ nhỏ sang lớn)
+                        image_url = image_url.replace('/s/', '/l/')
+                        print(f"  > Tìm thấy ảnh: {image_url}")
+                        break
             
-            # PHƯƠNG PHÁP 3: TÌM TRONG THẺ META OG:IMAGE
-            if not image_urls:
-                og_image = soup.find('meta', property='og:image')
-                if og_image:
-                    img_url = og_image.get('content', '')
-                    if img_url and img_url.strip():
-                        # Bỏ qua nếu là logo
-                        if not 'LOGO-BAA' in img_url:
-                            # Kiểm tra xem có phải ảnh đã resize không
-                            if '/ResizeHinhAnh.ashx' in img_url:
-                                # Trích xuất đường dẫn gốc từ tham số fileName
-                                original_path_match = re.search(r'fileName=([^&]+)', img_url)
-                                if original_path_match:
-                                    original_path = original_path_match.group(1)
-                                    # Chuyển đổi URL encoding nếu cần
-                                    original_path = original_path.replace('%2F', '/')
-                                    # Thay đổi kích thước thành 800px nếu có thể
-                                    full_size_url = re.sub(r'/\d+/', '/800/', original_path)
-                                    image_urls.append(full_size_url)
-                                    print(f"  ✓ Tìm thấy ảnh gốc từ og:image: {full_size_url}")
-                                else:
-                                    image_urls.append(img_url)
-                                    print(f"  ✓ Tìm thấy ảnh trong og:image (không thể lấy ảnh gốc): {img_url}")
-                            else:
-                                # Kiểm tra và chuyển đổi sang kích thước đầy đủ nếu có số trong đường dẫn
-                                full_size_url = re.sub(r'/(\d+)/', '/800/', img_url)
-                                image_urls.append(full_size_url)
-                                print(f"  ✓ Tìm thấy ảnh trong og:image: {full_size_url}")
+            result = {
+                'URL': url,
+                'Mã sản phẩm': product_code,
+                'Trạng thái': '',
+                'Ảnh sản phẩm': '',
+                'Lỗi': ''
+            }
             
-            # Các phương pháp tìm khác nếu cần
-            # ... (code phương pháp khác nếu cần)
-            
-            # Nếu không tìm thấy ảnh nào, thông báo thất bại
-            if not image_urls:
-                results['failed'] += 1
-                report_item['Lý do lỗi'] = 'Không tìm thấy ảnh sản phẩm'
-                results['report_data'].append(report_item)
-                print(f"  ✗ Không tìm thấy ảnh cho URL: {url}")
-                continue
-            
-            # Chuẩn hóa các URL ảnh
-            normalized_urls = []
-            base_url = '{uri.scheme}://{uri.netloc}'.format(uri=urlparse(url))
-            
-            for img_url in image_urls:
-                # Chuyển URLs tương đối thành tuyệt đối
-                if img_url.startswith('//'):
-                    img_url = 'https:' + img_url
-                elif not img_url.startswith(('http://', 'https://')):
-                    img_url = urljoin(base_url, img_url)
+            if image_url:
+                # Đảm bảo URL ảnh là đầy đủ
+                if not image_url.startswith('http'):
+                    # Xử lý trường hợp URL bắt đầu bằng //
+                    if image_url.startswith('//'):
+                        image_url = 'https:' + image_url
+                    else:
+                        # Xử lý URL tương đối
+                        parsed_url = urlparse(url)
+                        base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+                        image_url = urljoin(base_url, image_url)
                 
-                # Lọc các URL trùng lặp
-                if img_url not in normalized_urls and img_url.strip():
-                    normalized_urls.append(img_url)
-            
-            # Tải và lưu ảnh
-            saved_images = []
-            
-            for i, img_url in enumerate(normalized_urls):
                 try:
-                    # Tạo tên file ảnh
-                    img_filename = f"{product_code}.webp" if i == 0 else f"{product_code}_{i+1}.webp"
-                    img_path = os.path.join(output_folder, img_filename)
-                    
-                    print(f"  → Đang tải ảnh: {img_url}")
+                    # Tạo tên file từ mã sản phẩm
+                    image_filename = f"{product_code}.webp"
+                    image_path = os.path.join(output_folder, image_filename)
                     
                     # Tải ảnh
-                    img_response = requests.get(img_url, headers=headers, timeout=15)
-                    img_response.raise_for_status()
-                    
-                    # Xử lý ảnh
-                    img = Image.open(BytesIO(img_response.content))
-                    img = img.convert("RGB")  # Đảm bảo chế độ màu tương thích
-                    
-                    # Lưu thông tin kích thước ảnh
-                    img_size = f"{img.width}x{img.height}"
-                    img_sizes.append(img_size)
-                    
-                    # Lưu ảnh dưới dạng WebP với chất lượng cao
-                    img.save(img_path, 'WEBP', quality=95)
-                    
-                    # Thêm vào danh sách ảnh đã lưu
-                    saved_images.append(img_path)
-                    images_found = True
-                    
-                    print(f"  ✓ Đã lưu: {img_filename} ({img_size})")
-                    
-                    # Cập nhật dữ liệu báo cáo
-                    report_item['Đường dẫn ảnh'] = img_path
-                    report_item['Kích thước ảnh'] = img_size
-                    
-                    # Nếu đã tìm và lưu được ảnh đầu tiên, dừng lại
-                    break
-                    
+                    print(f"  > Đang tải ảnh từ: {image_url}")
+                    for attempt in range(3):
+                        try:
+                            img_response = requests.get(image_url, headers=headers, timeout=30)
+                            img_response.raise_for_status()
+                            
+                            # Chuyển đổi sang WebP và lưu
+                            img = Image.open(BytesIO(img_response.content))
+                            img.save(image_path, 'WEBP', quality=90)
+                            
+                            print(f"  > Đã lưu ảnh: {image_path}")
+                            result['Trạng thái'] = 'Thành công'
+                            result['Ảnh sản phẩm'] = image_filename
+                            break
+                        except (requests.RequestException, Exception) as e:
+                            print(f"  > Lỗi khi tải ảnh ({attempt+1}/3): {str(e)}")
+                            if attempt == 2:  # Lần thử cuối cùng
+                                result['Trạng thái'] = 'Lỗi'
+                                result['Lỗi'] = f"Không thể tải ảnh: {str(e)}"
+                            time.sleep(2)
                 except Exception as e:
-                    print(f"  ✗ Lỗi khi tải ảnh {img_url}: {str(e)}")
-                    report_item['Lý do lỗi'] = f"Lỗi khi tải ảnh: {str(e)}"
-                    continue
-            
-            # Cập nhật kết quả
-            if images_found:
-                results['success'] += 1
-                results['image_paths'].extend(saved_images)
-                report_item['Trạng thái'] = 'Thành công'
+                    print(f"  > Lỗi khi xử lý ảnh: {str(e)}")
+                    result['Trạng thái'] = 'Lỗi'
+                    result['Lỗi'] = f"Lỗi xử lý ảnh: {str(e)}"
             else:
-                results['failed'] += 1
-                report_item['Lý do lỗi'] = 'Không tải được ảnh'
-                print(f"  ✗ Không tải được ảnh cho URL: {url}")
+                print(f"  > Không tìm thấy ảnh sản phẩm")
+                result['Trạng thái'] = 'Lỗi'
+                result['Lỗi'] = 'Không tìm thấy ảnh sản phẩm'
             
-            # Thêm vào dữ liệu báo cáo
-            results['report_data'].append(report_item)
-            
-            # Nghỉ giữa các yêu cầu để tránh bị chặn
-            time.sleep(0.5)
+            results.append(result)
             
         except Exception as e:
-            results['failed'] += 1
-            report_item['Lý do lỗi'] = f"Lỗi: {str(e)}"
-            results['report_data'].append(report_item)
-            print(f"Lỗi khi xử lý URL {url}: {str(e)}")
-            traceback.print_exc()
+            print(f"  > Lỗi khi xử lý URL {url}: {str(e)}")
+            results.append({
+                'URL': url,
+                'Mã sản phẩm': 'Không xác định',
+                'Trạng thái': 'Lỗi',
+                'Ảnh sản phẩm': '',
+                'Lỗi': str(e)
+            })
     
-    # Tạo file báo cáo Excel
-    try:
-        report_df = pd.DataFrame(results['report_data'])
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        
-        # Tạo thư mục reports nếu chưa có
-        reports_folder = os.path.join(os.path.dirname(output_folder), "reports")
-        os.makedirs(reports_folder, exist_ok=True)
-        
-        # Lưu báo cáo vào thư mục reports riêng biệt
-        report_path = os.path.join(reports_folder, f"report_images_{timestamp}.xlsx")
-        
-        # Tạo writer Excel với định dạng
-        writer = pd.ExcelWriter(report_path, engine='openpyxl')
-        report_df.to_excel(writer, index=False, sheet_name='Báo cáo tải ảnh')
-        
-        # Lấy sheet để định dạng
-        worksheet = writer.sheets['Báo cáo tải ảnh']
-        
-        # Điều chỉnh độ rộng cột
-        for idx, col in enumerate(report_df.columns):
-            max_len = max(
-                report_df[col].astype(str).map(len).max(),
-                len(str(col))
-            ) + 2
-            # Đặt giới hạn độ rộng cột
-            max_len = min(max_len, 50)
-            # Chuyển đổi sang đơn vị Excel
-            worksheet.column_dimensions[chr(65 + idx)].width = max_len
-        
-        # Lưu file Excel
-        writer.close()
-        
-        print(f"Đã tạo báo cáo Excel: {report_path}")
-        results['report_file'] = report_path
-    except Exception as e:
-        print(f"Lỗi khi tạo báo cáo Excel: {str(e)}")
-        traceback.print_exc()
+    # Tạo báo cáo Excel
+    report_file = os.path.join(output_folder, 'baa_images_report.xlsx')
+    create_image_report(results, report_file)
+    print(f"Đã tạo báo cáo: {report_file}")
     
-    print(f"\nKết quả tải ảnh BAA:")
-    print(f"- Tổng số URL: {results['total']}")
-    print(f"- Thành công: {results['success']}")
-    print(f"- Thất bại: {results['failed']}")
-    print(f"- Tổng số ảnh đã tải: {len(results['image_paths'])}")
+    # Tạo file ZIP
+    zip_file = f"{output_folder}.zip"
+    create_zip_from_folder(output_folder, zip_file)
+    print(f"Đã tạo file ZIP: {zip_file}")
     
-    return results
+    # Trả về đường dẫn đến file ZIP
+    return zip_file
 
 def resize_image_to_square(image, size=800):
     """

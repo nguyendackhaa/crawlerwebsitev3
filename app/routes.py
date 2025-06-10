@@ -18,6 +18,8 @@ import shutil
 from urllib.parse import urlparse
 import concurrent.futures
 from app.baa_crawler import BaaProductCrawler
+from app.product_categorizer import ProductCategorizer
+from app.resize import ImageResizer
 
 main_bp = Blueprint('main', __name__)
 
@@ -345,8 +347,8 @@ def convert_to_webp():
         # Kiểm tra các file có đúng định dạng không
         for file in files:
             filename = file.filename.lower()
-            if not (filename.endswith('.jpg') or filename.endswith('.jpeg') or filename.endswith('.png')):
-                return render_template('index.html', error="Chỉ chấp nhận file .jpg, .jpeg, .png")
+            if not (filename.endswith('.jpg') or filename.endswith('.jpeg') or filename.endswith('.png') or filename.endswith('.webp')):
+                return render_template('index.html', error="Chỉ chấp nhận file .jpg, .jpeg, .png, .webp")
         
         # Tạo thư mục đầu ra cho ảnh đã chuyển đổi
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -2750,3 +2752,211 @@ def filter_product_types():
         traceback.print_exc()
         flash(f'Lỗi: {error_message}', 'error')
         return redirect(url_for('main.index', _anchor='filter-product-types-tab'))
+
+@main_bp.route('/categorize-products', methods=['POST'])
+def categorize_products():
+    """
+    Phân loại sản phẩm theo danh mục từ file Excel/CSV
+    """
+    try:
+        if 'product_file' not in request.files:
+            return render_template('index.html', error="Không tìm thấy file dữ liệu sản phẩm", active_tab="categorize-products-tab")
+        
+        product_file = request.files['product_file']
+        
+        if product_file.filename == '':
+            return render_template('index.html', error="Không có file nào được chọn", active_tab="categorize-products-tab")
+        
+        # Kiểm tra định dạng file
+        file_ext = os.path.splitext(product_file.filename)[1].lower()
+        if file_ext not in ['.xlsx', '.xls', '.csv']:
+            return render_template('index.html', error="File phải có định dạng .xlsx, .xls hoặc .csv", active_tab="categorize-products-tab")
+        
+        # Lưu file tạm
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=file_ext)
+        temp_file_path = temp_file.name
+        temp_file.close()
+        product_file.save(temp_file_path)
+        
+        # Lấy thư mục đầu ra từ form
+        output_dir = request.form.get('output_dir', '').strip()
+        if not output_dir:
+            output_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], 'categorized')
+            
+        # Đảm bảo thư mục đầu ra tồn tại
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Khởi tạo và chạy trình phân loại sản phẩm
+        socketio.emit('progress_update', {'percent': 10, 'message': 'Đang đọc dữ liệu sản phẩm...'})
+        categorizer = ProductCategorizer()
+        
+        socketio.emit('progress_update', {'percent': 30, 'message': 'Đang phân loại sản phẩm theo danh mục...'})
+        result = categorizer.categorize_and_export(temp_file_path, output_dir)
+        
+        # Xóa file tạm
+        os.unlink(temp_file_path)
+        
+        # Kiểm tra kết quả
+        if isinstance(result, dict) and 'error' in result:
+            return render_template('index.html', error=f"Lỗi khi phân loại sản phẩm: {result['error']}", active_tab="categorize-products-tab")
+        
+        # Tạo đường dẫn download
+        output_filename = os.path.basename(result)
+        download_url = url_for('main.download_file', filename=f"categorized/{output_filename}")
+        
+        socketio.emit('progress_update', {'percent': 100, 'message': 'Hoàn thành phân loại sản phẩm!'})
+        
+        success_message = f"Đã phân loại sản phẩm thành công theo danh mục và tạo file Excel {output_filename}"
+        return render_template('index.html', success_message=success_message, download_url=download_url, active_tab="categorize-products-tab")
+        
+    except Exception as e:
+        error_msg = f"Lỗi khi phân loại sản phẩm: {str(e)}"
+        print(error_msg)
+        print(traceback.format_exc())
+        return render_template('index.html', error=error_msg, active_tab="categorize-products-tab")
+
+@main_bp.route('/upscale-image', methods=['POST'])
+def upscale_image():
+    """
+    Nâng cao chất lượng ảnh sử dụng Real-ESRGAN
+    """
+    try:
+        if 'input_image' not in request.files:
+            flash('Không tìm thấy file ảnh!', 'error')
+            return redirect(url_for('main.index', active_tab='image-upscale-tab'))
+            
+        file = request.files['input_image']
+        
+        if file.filename == '':
+            flash('Không có file nào được chọn!', 'error')
+            return redirect(url_for('main.index', active_tab='image-upscale-tab'))
+            
+        if not file.filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
+            flash('Chỉ chấp nhận file ảnh định dạng JPG, JPEG, PNG hoặc WebP!', 'error')
+            return redirect(url_for('main.index', active_tab='image-upscale-tab'))
+        
+        # Sử dụng kích thước cố định 600x600
+        target_size = (600, 600)
+        
+        # Lưu file tạm
+        temp_dir = tempfile.mkdtemp()
+        input_path = os.path.join(temp_dir, secure_filename(file.filename))
+        file.save(input_path)
+        
+        # Gửi thông báo tiến trình
+        socketio.emit('progress_update', {
+            'percent': 10, 
+            'message': 'Đang chuẩn bị xử lý ảnh...',
+            'detail': f'Tệp: {file.filename}, Kích thước đích: {target_size[0]}x{target_size[1]} pixel'
+        })
+        
+        # Thêm module resize
+        from app.resize import ImageResizer
+        
+        # Khởi tạo ImageResizer
+        resizer = ImageResizer()
+        
+        # Kiểm tra xem Real-ESRGAN có khả dụng không
+        if resizer.realesrgan_available:
+            # Gửi thông báo tiến trình
+            socketio.emit('progress_update', {
+                'percent': 20, 
+                'message': 'Đang nâng cao chất lượng ảnh bằng AI (Real-ESRGAN)...',
+                'detail': 'Quá trình này có thể mất vài phút tùy thuộc vào kích thước ảnh'
+            })
+        else:
+            # Gửi thông báo tiến trình
+            socketio.emit('progress_update', {
+                'percent': 20, 
+                'message': 'Đang nâng cao chất lượng ảnh...',
+                'detail': 'Sử dụng phương pháp thay thế vì Real-ESRGAN không khả dụng'
+            })
+        
+        # Tạo tên file đầu ra
+        output_filename = os.path.splitext(secure_filename(file.filename))[0] + f"_enhanced_600x600.webp"
+        output_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], 'upscaled_images')
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, output_filename)
+        
+        socketio.emit('progress_update', {
+            'percent': 30,
+            'message': 'Đang xử lý ảnh...',
+            'detail': 'Đang thực hiện nâng cao chất lượng ảnh với kích thước cố định 600x600'
+        })
+        
+        # Thực hiện upscale ảnh với kích thước cố định
+        try:
+            # Thử với chất lượng cao nhất
+            result_path = resizer.upscale_image(input_path, output_path, target_size=target_size)
+            
+            socketio.emit('progress_update', {
+                'percent': 90,
+                'message': 'Đã xử lý ảnh thành công!',
+                'detail': 'Đang kiểm tra chất lượng ảnh đầu ra'
+            })
+            
+            # Kiểm tra kích thước file đầu ra để đảm bảo nó được tạo đúng cách
+            if not os.path.exists(result_path) or os.path.getsize(result_path) < 1024:
+                # Nếu file đầu ra quá nhỏ hoặc không tồn tại, thử lại với phương pháp thay thế
+                socketio.emit('progress_update', {
+                    'percent': 60,
+                    'message': 'Đang thử lại với phương pháp thay thế...',
+                    'detail': 'Phương pháp AI gặp vấn đề, đang sử dụng phương pháp truyền thống'
+                })
+                # Đảm bảo Real-ESRGAN không được sử dụng cho lần thử lại
+                resizer.realesrgan_available = False
+                result_path = resizer.upscale_image(input_path, output_path, target_size=target_size)
+        except Exception as upscale_error:
+            # Log lỗi
+            current_app.logger.error(f"Lỗi khi upscale ảnh: {str(upscale_error)}")
+            traceback.print_exc()
+            
+            # Thử lại với phương pháp thay thế nếu Real-ESRGAN thất bại
+            socketio.emit('progress_update', {
+                'percent': 40,
+                'message': 'Gặp lỗi khi xử lý bằng AI, đang thử phương pháp thay thế...',
+                'detail': f'Lỗi: {str(upscale_error)}'
+            })
+            
+            # Đảm bảo Real-ESRGAN không được sử dụng cho lần thử lại
+            resizer.realesrgan_available = False
+            result_path = resizer.upscale_image(input_path, output_path, target_size=target_size)
+        
+        # Xóa thư mục tạm
+        shutil.rmtree(temp_dir)
+        
+        # Tạo URL cho file kết quả
+        result_url = url_for('main.download_upscaled_image', filename=output_filename)
+        
+        # Gửi thông báo hoàn thành
+        socketio.emit('progress_update', {
+            'percent': 100,
+            'message': 'Đã hoàn thành nâng cao chất lượng ảnh!',
+            'detail': f'Tệp kết quả: {output_filename} (kích thước 600x600)'
+        })
+        
+        # Kiểm tra xem đã dùng Real-ESRGAN hay chưa
+        if resizer.realesrgan_available:
+            success_message = f'Đã nâng cao chất lượng ảnh thành công với AI Real-ESRGAN (kích thước 600x600 pixel)!'
+        else:
+            success_message = f'Đã nâng cao chất lượng ảnh thành công với kích thước 600x600 pixel!'
+        
+        # Trả về trang kết quả
+        return render_template('index.html', 
+                               active_tab='image-upscale-tab', 
+                               success_message=success_message,
+                               download_url=result_url)
+                               
+    except Exception as e:
+        error_message = str(e)
+        traceback.print_exc()
+        flash(f'Lỗi khi xử lý ảnh: {error_message}', 'error')
+        return redirect(url_for('main.index', active_tab='image-upscale-tab'))
+
+@main_bp.route('/download-upscaled-image/<filename>')
+def download_upscaled_image(filename):
+    """
+    Tải xuống ảnh đã được upscale
+    """
+    upscaled_images_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], 'upscaled_images')
+    return send_from_directory(upscaled_images_dir, filename, as_attachment=True)

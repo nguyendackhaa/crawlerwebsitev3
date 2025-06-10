@@ -118,6 +118,11 @@
                 </button>
             </li>
             <li class="nav-item" role="presentation">
+                <button class="nav-link {% if active_tab == 'image-upscale-tab' %}active{% endif %}" id="image-upscale-tab" data-bs-toggle="tab" data-bs-target="#image-upscale" type="button" role="tab" aria-controls="image-upscale" aria-selected="{% if active_tab == 'image-upscale-tab' %}true{% else %}false{% endif %}">
+                    <i class="bi bi-image-alt"></i> Nâng cao chất lượng ảnh (AI)
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
                 <button class="nav-link" id="category-baa-images-tab" data-bs-toggle="tab" data-bs-target="#category-baa-images" type="button" role="tab" aria-controls="category-baa-images" aria-selected="false">
                     <i class="bi bi-folder-symlink"></i> Tải ảnh từ nhiều danh mục
                 </button>
@@ -160,6 +165,11 @@
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="baa-crawler-tab" data-bs-toggle="tab" data-bs-target="#baa-crawler" type="button" role="tab" aria-controls="baa-crawler" aria-selected="false">
                     <i class="bi bi-globe"></i> Cào dữ liệu BAA.vn
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="categorize-products-tab" data-bs-toggle="tab" data-bs-target="#categorize-products" type="button" role="tab" aria-controls="categorize-products" aria-selected="false">
+                    <i class="bi bi-folder-symlink"></i> Phân loại sản phẩm theo danh mục
                 </button>
             </li>
         </ul>
@@ -323,8 +333,8 @@
                         <label for="image_files" class="file-input-label">
                                 <i class="bi bi-file-earmark-image fs-3"></i>
                                 <div class="mt-2">Tải lên hình ảnh cần chuyển đổi</div>
-                                <span>Chỉ chấp nhận file .jpg, .jpeg, .png</span>
-                                <input type="file" id="image_files" name="image_files" class="d-none" accept=".jpg,.jpeg,.png" multiple onchange="updateFileNameMultiple(this, 'image_files_name')">
+                                <span>Chỉ chấp nhận file .jpg, .jpeg, .png, .webp</span>
+                                <input type="file" id="image_files" name="image_files" class="d-none" accept=".jpg,.jpeg,.png,.webp" multiple onchange="updateFileNameMultiple(this, 'image_files_name')">
                         </label>
                         <div id="image_files_name" class="mb-3 text-muted"></div>
                         <button type="submit" class="btn btn-primary w-100">Chuyển đổi sang WebP</button>
@@ -986,6 +996,111 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                     </div>
                 </div>
             </div>
+
+            <!-- Tab phân loại sản phẩm theo danh mục -->
+            <div class="tab-pane fade" id="categorize-products" role="tabpanel" aria-labelledby="categorize-products-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Phân loại sản phẩm theo danh mục</h4>
+                    
+                    <div class="data-format">
+                        <h5>Thông tin về chức năng</h5>
+                        <p>Chức năng này cho phép phân loại sản phẩm theo danh mục và xuất ra file Excel có nhiều sheet riêng biệt:</p>
+                        <ol>
+                            <li>Tải lên file Excel/CSV chứa dữ liệu sản phẩm với cột "Danh mục" và thông tin sản phẩm</li>
+                            <li>Hệ thống sẽ tự động phân loại sản phẩm dựa trên danh mục</li>
+                            <li>Xuất file Excel mới với các sheet riêng biệt cho từng danh mục sản phẩm</li>
+                            <li>Hỗ trợ các danh mục chuẩn như: Cảm biến quang, Cảm biến áp suất, Cảm biến lưu lượng, Cảm biến tiệm cận, v.v.</li>
+                            <li>Các sản phẩm không thuộc danh mục chuẩn sẽ được lưu vào sheet "Khác"</li>
+                        </ol>
+                        <div class="alert alert-info mt-3">
+                            <i class="bi bi-info-circle-fill me-2"></i> <strong>Lợi ích:</strong> Giúp quản lý sản phẩm có cấu trúc, dễ dàng theo dõi từng nhóm sản phẩm riêng biệt.
+                        </div>
+                    </div>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <p>Tải lên file <strong>Excel/CSV</strong> chứa dữ liệu sản phẩm với cột "Danh mục"</p>
+                        </div>
+                        <div class="step">
+                            <p>Chọn thư mục đầu ra để lưu file Excel kết quả</p>
+                        </div>
+                        <div class="step">
+                            <p>Nhấn nút "Phân loại sản phẩm" để bắt đầu quá trình</p>
+                        </div>
+                    </div>
+
+                    <form action="{{ url_for('main.categorize_products') }}" method="post" enctype="multipart/form-data" id="categorize-products-form">
+                        <div class="mb-3">
+                            <label for="product_file" class="file-input-label">
+                                <i class="bi bi-file-earmark-excel fs-3"></i>
+                                <div class="mt-2">File dữ liệu sản phẩm</div>
+                                <span>Chỉ chấp nhận file .xlsx, .xls, .csv</span>
+                                <input type="file" id="product_file" name="product_file" class="d-none" accept=".xlsx, .xls, .csv" required onchange="updateFileName(this, 'product_file_name')">
+                            </label>
+                            <div id="product_file_name" class="mb-3 text-muted"></div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="output_dir" class="form-label">Thư mục đầu ra (không bắt buộc):</label>
+                            <input type="text" id="output_dir" name="output_dir" class="form-control" placeholder="Để trống nếu muốn lưu vào thư mục mặc định">
+                            <small class="text-muted">Nếu không chọn, file sẽ được lưu vào thư mục mặc định 'output'</small>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-diagram-3"></i> Phân loại sản phẩm
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Tab upscale ảnh bằng Real-ESRGAN -->
+            <div class="tab-pane fade {% if active_tab == 'image-upscale-tab' %}show active{% endif %}" id="image-upscale" role="tabpanel" aria-labelledby="image-upscale-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Nâng cao chất lượng ảnh bằng AI (Real-ESRGAN)</h4>
+                    
+                    <div class="data-format">
+                        <h5>Thông tin về chức năng</h5>
+                        <p>Chức năng này sử dụng công nghệ AI tiên tiến (Real-ESRGAN) để nâng cao chất lượng và độ phân giải của ảnh:</p>
+                        <ol>
+                            <li>Sử dụng <strong>AI Real-ESRGAN</strong> để khôi phục chi tiết và nâng cao chất lượng ảnh</li>
+                            <li>Tự động chuyển đổi ảnh thành kích thước <strong>600x600 pixel</strong> với chất lượng cao</li>
+                            <li>Giữ nguyên tỷ lệ khung hình gốc, không bị méo ảnh</li>
+                            <li>Tối ưu độ sắc nét, không bị vỡ ảnh</li>
+                            <li>Lưu kết quả với định dạng WebP tối ưu cho web</li>
+                        </ol>
+                    </div>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <p>Chọn ảnh cần nâng cao chất lượng</p>
+                        </div>
+                        <div class="step">
+                            <p>Nhấn nút "Nâng cao chất lượng ảnh" để bắt đầu quá trình</p>
+                        </div>
+                        <div class="step">
+                            <p>Tải xuống ảnh kết quả với kích thước 600x600 pixel, giữ nguyên độ sắc nét</p>
+                        </div>
+                    </div>
+
+                    <form action="{{ url_for('main.upscale_image') }}" method="post" enctype="multipart/form-data" id="upscale-image-form">
+                        <label for="input_image" class="file-input-label">
+                            <i class="bi bi-image fs-3"></i>
+                            <div class="mt-2">Chọn ảnh cần nâng cao chất lượng</div>
+                            <span>Chấp nhận định dạng .jpg, .jpeg, .png, .webp</span>
+                            <input type="file" id="input_image" name="input_image" class="d-none" accept=".jpg,.jpeg,.png,.webp" required onchange="updateFileName(this, 'input_image_name')">
+                        </label>
+                        <div id="input_image_name" class="mb-3 text-muted"></div>
+                        
+                        <div class="alert alert-info mb-3">
+                            <i class="bi bi-info-circle-fill"></i> Ảnh sẽ được chuyển đổi thành kích thước <strong>600x600 pixel</strong> với chất lượng tối ưu.
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-image-alt"></i> Nâng cao chất lượng ảnh
+                        </button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1056,6 +1171,33 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                 }, 5000);
             }
         });
+
+        function updateFileName(input, outputId) {
+            const output = document.getElementById(outputId);
+            if (input.files && input.files[0]) {
+                output.textContent = "Đã chọn: " + input.files[0].name;
+            } else {
+                output.textContent = "";
+            }
+        }
+        
+        function updateFileNameMultiple(input, outputId) {
+            const output = document.getElementById(outputId);
+            if (input.files && input.files.length > 0) {
+                output.textContent = "Đã chọn: " + input.files.length + " file";
+            } else {
+                output.textContent = "";
+            }
+        }
+        
+        // Kích hoạt tab
+        function activateTab(tabId) {
+            const tab = document.querySelector('button[id="' + tabId + '"]');
+            if (tab) {
+                const bsTab = new bootstrap.Tab(tab);
+                bsTab.show();
+            }
+        }
     </script>
 </body>
 </html> 

@@ -539,7 +539,7 @@ class CategoryCrawler:
         excel_file = os.path.join(category_dir, f"{category_name}_products.xlsx")
         if product_info_list:
             # Chỉ lấy các trường quan trọng để lưu vào Excel
-            important_fields = ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Giá', 'URL', 'Mô tả', 'Ảnh sản phẩm']
+            important_fields = ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Giá', 'URL', 'Tổng quan', 'Ảnh sản phẩm']
             
             # Tạo DataFrame từ danh sách sản phẩm với các trường quan trọng
             df = pd.DataFrame([{field: product.get(field, '') for field in important_fields} for product in product_info_list])
@@ -567,30 +567,56 @@ class CategoryCrawler:
                 for cat_info in category_info:
                     try:
                         cat_name = cat_info['Tên danh mục']
-                        cat_dir = os.path.join(result_dir, secure_filename(cat_name))
-                        excel_file = os.path.join(cat_dir, f'{secure_filename(cat_name)}.xlsx')
+                        # Sử dụng tên danh mục trực tiếp (đã được xử lý khi tạo thư mục)
+                        cat_dir = os.path.join(result_dir, cat_name)
+                        excel_file = os.path.join(cat_dir, f'{cat_name}_products.xlsx') # Sử dụng tên file đã lưu
+                        
                         if os.path.exists(excel_file):
+                            print(f"  > Đang đọc file Excel danh mục: {excel_file}")
                             df_cat = pd.read_excel(excel_file)
+                            
                             # Thêm thông tin danh mục vào mỗi sản phẩm
                             df_cat['Danh mục'] = cat_name
+                            
+                            # Đảm bảo cột 'Tổng quan' tồn tại trước khi thêm vào all_products
+                            if 'Tổng quan' not in df_cat.columns:
+                                df_cat['Tổng quan'] = "" # Thêm cột rỗng nếu không có
+                                
                             all_products.append(df_cat)
+                            print(f"  > Đã đọc thành công {len(df_cat)} dòng từ file {excel_file}")
+                        else:
+                            print(f"  > Cảnh báo: File Excel danh mục không tồn tại: {excel_file}")
+                            
                     except Exception as e:
                         print(f"Lỗi khi đọc file Excel cho danh mục {cat_name}: {str(e)}")
+                        traceback.print_exc()
+
                 # Kết hợp tất cả sản phẩm vào một sheet
                 if all_products:
                     df_all_products = pd.concat(all_products, ignore_index=True)
-                    # Đưa cột 'Danh mục' lên đầu nếu tồn tại
-                    cols = list(df_all_products.columns)
-                    if 'Danh mục' in cols:
-                        cols.remove('Danh mục')
-                        df_all_products = df_all_products[['Danh mục'] + cols]
+                    
+                    # Định nghĩa thứ tự các cột mong muốn
+                    desired_order = ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Giá', 'Danh mục', 'URL', 'Tổng quan', 'Mô tả', 'Ảnh sản phẩm']
+                    
+                    # Lọc và sắp xếp lại các cột theo thứ tự mong muốn
+                    # Giữ lại các cột có trong DataFrame và sắp xếp theo desired_order
+                    existing_cols_in_order = [col for col in desired_order if col in df_all_products.columns]
+                    # Thêm bất kỳ cột nào khác không có trong desired_order vào cuối
+                    other_cols = [col for col in df_all_products.columns if col not in desired_order]
+                    final_cols_order = existing_cols_in_order + other_cols
+                    
+                    df_all_products = df_all_products[final_cols_order]
+                    
                     # Ghi ra sheet tổng hợp
                     df_all_products.to_excel(writer, sheet_name='Tổng hợp sản phẩm', index=False)
+                    log_and_emit(f"Đã tạo sheet \'Tổng hợp sản phẩm\' với {len(df_all_products)} dòng")
+                    
                     # Định dạng sheet
                     worksheet = writer.sheets['Tổng hợp sản phẩm']
+                    
                     # Điều chỉnh độ rộng cột
                     for idx, col in enumerate(df_all_products.columns):
-                        # Đặt độ rộng cột dựa trên loại dữ liệu
+                        # Đặt độ rộng cột dựa trên tên cột và loại dữ liệu
                         if col == 'STT':
                             max_width = 5
                         elif col == 'Mã sản phẩm':
@@ -599,21 +625,32 @@ class CategoryCrawler:
                             max_width = 40
                         elif col == 'Giá':
                             max_width = 15
-                        elif col == 'Mô tả':
-                            max_width = 60
+                        elif col == 'Danh mục':
+                             max_width = 20 # Thêm độ rộng cho cột Danh mục
                         elif col == 'Tổng quan':
-                            max_width = 60
+                            max_width = 80 # Tăng độ rộng cho cột Tổng quan
+                        elif col == 'Mô tả': # Mô tả gốc từ web, có thể vẫn cần
+                             max_width = 60
                         elif col in ['Ảnh sản phẩm', 'Ảnh bổ sung', 'Tài liệu kỹ thuật', 'URL']:
                             max_width = 50
                         else:
                             # Tính toán độ rộng dựa trên nội dung (tối đa 50)
-                            max_width = min(50, max([
-                                len(str(df_all_products[col].iloc[i])) 
-                                for i in range(min(10, len(df_all_products)))
-                            ] + [len(col)]))
+                            try:
+                                # Chỉ lấy mẫu vài dòng để ước tính độ rộng
+                                max_len = max([len(str(x)) for x in df_all_products[col].head(20).tolist()] + [len(col)])
+                                max_width = min(50, max_len + 2) # Cộng thêm 2 cho padding
+                            except Exception:
+                                 max_width = 20 # Mặc định nếu tính toán lỗi
+                                 
                         col_letter = get_column_letter(idx + 1)
                         worksheet.column_dimensions[col_letter].width = max_width
-            print(f"Đã tạo báo cáo tổng hợp: {report_file}")
+
+                    print(f"Đã định dạng sheet \'Tổng hợp sản phẩm\'")
+
+                else:
+                     print(f"  > Không có dữ liệu sản phẩm để tạo sheet \'Tổng hợp sản phẩm\'")
+
+                print(f"Đã tạo báo cáo tổng hợp: {report_file}")
             emit_progress(100, f'Đã hoàn tất thu thập dữ liệu từ {len(valid_urls)} danh mục sản phẩm')
         except Exception as e:
             print(f"Lỗi khi tạo báo cáo: {str(e)}")
@@ -631,6 +668,7 @@ class CategoryCrawler:
                 'Tên sản phẩm': "",
                 'Giá': "",
                 'Mô tả': "",
+                'Tổng quan': "",
                 'Ảnh sản phẩm': ""
             }
             # Tải nội dung trang với retry
@@ -640,7 +678,7 @@ class CategoryCrawler:
                 try:
                     response = requests.get(
                         url, 
-                        headers={'User-Agent': 'Mozilla/5.0'}, 
+                        headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}, 
                         timeout=self.request_timeout
                     )
                     response.raise_for_status()
@@ -657,18 +695,18 @@ class CategoryCrawler:
                 raise Exception(f"Không thể tải nội dung từ {url}")
             # Parse HTML
             print(f"  > Đang phân tích HTML từ {url}")
-            soup = BeautifulSoup(response.text, 'html.parser')
+            soup = BeautifulSoup(response.text, 'lxml')  # Sử dụng parser lxml thay vì html.parser
             print(f"  > Đã phân tích HTML thành công")
             # Trích xuất tên sản phẩm
             product_name = ""
-            name_element = soup.select_one('h1.mb-0, h1.product-title')
+            name_element = soup.select_one('h1.mb-0, h1.product-title, h1.product_title')
             if name_element:
                 product_name = name_element.text.strip()
                 print(f"  > Tìm thấy tên sản phẩm: {product_name}")
                 product_info['Tên sản phẩm'] = product_name
             # Trích xuất mã sản phẩm
             product_code = ""
-            code_element = soup.select_one('div.text-muted strong')
+            code_element = soup.select_one('div.text-muted strong, .sku, .product_meta .sku')
             if code_element:
                 product_code = code_element.text.strip()
                 print(f"  > Tìm thấy mã sản phẩm: {product_code}")
@@ -682,52 +720,194 @@ class CategoryCrawler:
                     product_code = match.group(1)
                     print(f"  > Tìm thấy mã sản phẩm từ JS: {product_code}")
                     product_info['Mã sản phẩm'] = product_code
+                    
+                # Thử tìm trong product_meta
+                if not product_code:
+                    meta = soup.select_one('.product_meta')
+                    if meta:
+                        sku_text = meta.text
+                        sku_match = re.search(r'Mã: (.*)', sku_text)
+                        if sku_match:
+                            product_code = sku_match.group(1).strip()
+                            print(f"  > Tìm thấy mã sản phẩm từ product_meta: {product_code}")
+                            product_info['Mã sản phẩm'] = product_code
+            
             # Trích xuất giá sản phẩm
             price_text = ""
-            price_element = soup.select_one('span.price-new')
+            price_element = soup.select_one('span.price-new, .price .woocommerce-Price-amount, p.price, .summary .price')
             if price_element:
                 price_text = price_element.text.strip()
                 print(f"  > Tìm thấy giá sản phẩm: {price_text}")
                 product_info['Giá'] = price_text
-            # Trích xuất mô tả
-            description = ""
-            description_element = soup.select_one('div.tab-content div.editor-content')
-            if description_element:
-                print(f"  > Tìm thấy phần mô tả sản phẩm")
-                # Loại bỏ các phần tử không cần thiết
-                for img in description_element.find_all('img'):
-                    img.decompose()
+            
+            # TRÍCH XUẤT BẢNG THÔNG SỐ KỸ THUẬT từ tab mô tả
+            specs_found = False
+            specs_html = ""
+            specs_data = [] # Lưu dữ liệu trích xuất được
+            
+            # Tìm tab mô tả
+            tab_description = soup.select_one('#tab-description, .woocommerce-Tabs-panel--description')
+            if tab_description:
+                print(f"  > Tìm thấy tab mô tả sản phẩm")
+                print(f"  > HTML của tab mô tả: {str(tab_description)[:500]}...")  # In thêm HTML để debug
                 
-                # Lấy HTML của phần mô tả (giữ nguyên định dạng)
-                description = str(description_element)
-                product_info['Mô tả'] = description
+                # Tạo đối tượng BeautifulSoup mới với parser lxml để xử lý HTML tốt hơn
+                tab_soup = BeautifulSoup(str(tab_description), 'lxml')
+                
+                # Tìm bảng thông số kỹ thuật cụ thể
+                specs_table = tab_soup.select_one('table.woocommerce-product-attributes, table.shop_attributes')
+                
+                if specs_table:
+                    print(f"  > Tìm thấy bảng thông số kỹ thuật với class phù hợp")
+                    print(f"  > HTML của bảng: {str(specs_table)}")  # In toàn bộ HTML của bảng
+                    specs_found = True
+                    
+                    # Xử lý từng hàng trong bảng
+                    rows = specs_table.find_all('tr')
+                    print(f"  > Số lượng hàng trong bảng: {len(rows)}")
+                    
+                    for row_index, row in enumerate(rows):
+                        try:
+                            print(f"\n  > Xử lý hàng {row_index + 1}:")
+                            print(f"  > HTML của hàng: {str(row)}")
+                            
+                            # Lấy tất cả các ô trong hàng (td hoặc th)
+                            cells = row.find_all(['td', 'th'])
+                            if not cells:
+                                print(f"  > Hàng không có ô nào")
+                                continue
+                            
+                            print(f"  > Số lượng ô trong hàng: {len(cells)}")
+                            
+                            row_data = []
+                            for cell_index, cell in enumerate(cells):
+                                # Lấy nội dung văn bản và thuộc tính colspan/tag
+                                text = cell.get_text(strip=True)
+                                colspan = int(cell.get('colspan', 1))
+                                cell_type = cell.name
+                                print(f"  > Ô {cell_index + 1}: Text='{text}', Colspan={colspan}, Type={cell_type}")
+                                row_data.append({'text': text, 'colspan': colspan, 'tag': cell_type})
+                            
+                            # Bỏ qua hàng tiêu đề nếu hàng đầu tiên chứa <th> hoặc là hàng rỗng
+                            if row_index == 0 and (any(cell['tag'] == 'th' for cell in row_data) or not row_data):
+                                print(f"  > Bỏ qua hàng tiêu đề/rỗng")
+                                continue
+                            
+                            # Bỏ qua hàng chỉ chứa <th>
+                            if all(cell['tag'] == 'th' for cell in row_data):
+                                print(f"  > Bỏ qua hàng chỉ chứa tiêu đề <th>")
+                                continue
+                            
+                            # Trích xuất thông số và giá trị
+                            param = None
+                            value = None
+
+                            # Xử lý hàng có 2 ô (Thông số, Giá trị)
+                            if len(row_data) == 2:
+                                param = row_data[0]['text'].strip()
+                                value = row_data[1]['text'].strip()
+                                print(f"  > Trích xuất hàng 2 ô: Param='{param}', Value='{value}'")
+                                
+                            # Xử lý hàng có nhiều hơn 2 ô hoặc cấu trúc phức tạp hơn (có colspan)
+                            elif len(row_data) > 2:
+                                # Lấy ô đầu tiên làm thông số (kết hợp với các ô giữa nếu có colspan)
+                                param_cells = row_data[:-1]
+                                param_parts = [cell['text'] for cell in param_cells if cell['text']]
+                                param = " - ".join(param_parts).strip()
+                                
+                                # Lấy ô cuối cùng làm giá trị
+                                value_cell = row_data[-1]
+                                value = value_cell['text'].strip()
+                                print(f"  > Trích xuất hàng > 2 ô: Param='{param}', Value='{value}'")
+
+                            # Trường hợp chỉ có một ô (có thể là tiêu đề phụ hoặc ghi chú)
+                            elif len(row_data) == 1 and row_data[0]['text']:
+                                print(f"  > Hàng chỉ có 1 ô: {row_data[0]['text']}")
+                                continue
+                                
+                            # Thêm vào danh sách dữ liệu nếu trích xuất thành công cặp param/value
+                            if param and value:
+                                specs_data.append((param, value))
+                                print(f"  > Đã thêm vào specs_data: {param} = {value}")
+                            else:
+                                print(f"  > Không thể trích xuất param/value từ hàng này")
+                                
+                        except Exception as e:
+                            print(f"  > Lỗi khi xử lý hàng {row_index + 1}: {str(e)}")
+                            continue
+                    
+                    print(f"\n  > Tổng số thông số đã trích xuất: {len(specs_data)}")
+                    print(f"  > Dữ liệu đã trích xuất: {specs_data}")
+                    
+                    # Nếu có dữ liệu thì tạo bảng HTML theo định dạng chuẩn
+                    if specs_data:
+                        specs_html = '<table id="specifications" border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; font-family: Arial; width: 100%;"><thead><tr style="background-color: #f2f2f2;"><th>Thông số</th><th>Giá trị</th></tr></thead><tbody>'
+                        
+                        for param, value in specs_data:
+                            specs_html += f'<tr><td style="font-weight: bold;">{param}</td><td>{value}</td></tr>'
+                        
+                        # Thêm dòng Copyright vào cuối bảng
+                        specs_html += '<tr><td style="font-weight: bold;">Copyright</td><td>Haiphongtech.vn</td></tr>'
+                        specs_html += '</tbody></table>'
+                        print(f"  > Đã tạo bảng thông số kỹ thuật HTML với {len(specs_data)} thông số")
+                    else:
+                        print(f"  > Không có dữ liệu để tạo bảng")
+                        specs_html = self._generate_basic_specs_table(product_code, product_name)
+                else:
+                    print(f"  > Không tìm thấy bảng thông số kỹ thuật trong tab mô tả")
+                    specs_html = self._generate_basic_specs_table(product_code, product_name)
+                    specs_found = True
+            else:
+                print(f"  > Không tìm thấy tab mô tả sản phẩm")
+                specs_html = self._generate_basic_specs_table(product_code, product_name)
+                specs_found = True
             
-            # Tạo tổng quan từ bảng thông số kỹ thuật
-            if product_code and product_name:
-                print(f"  > Tạo bảng thông số kỹ thuật")
-                specs_table = self._generate_product_spec_table(product_code, product_name)
-                product_info['Tổng quan'] = specs_table
-            
+            # Lưu bảng thông số kỹ thuật vào trường Tổng quan
+            if specs_found and specs_html:
+                product_info['Tổng quan'] = specs_html
+            # Nếu không tìm được thông số và không tạo được bảng cơ bản
+            elif not product_info.get('Tổng quan') and product_code and product_name:
+                 print(f"  > Tạo bảng thông số kỹ thuật cơ bản vì không tìm thấy bảng")
+                 specs_html = self._generate_basic_specs_table(product_code, product_name)
+                 product_info['Tổng quan'] = specs_html
+
             # Tải và lưu ảnh sản phẩm nếu có thư mục đầu ra
             if output_dir and product_info['Mã sản phẩm']:
                 # Tạo URL ảnh theo định dạng yêu cầu
-                product_info['Ảnh sản phẩm'] = f"https://haiphongtech.vn/wp-content/uploads/2025/05/{product_info['Mã sản phẩm']}.webp"
+                # product_info['Ảnh sản phẩm'] = f"https://haiphongtech.vn/wp-content/uploads/2025/05/{product_info['Mã sản phẩm']}.webp"
                 
                 # Tải ảnh từ codienhaiau.com và lưu vào thư mục
-                image_url = self._download_codienhaiau_product_image(soup, url, output_dir, product_info['Mã sản phẩm'])
-                if image_url:
-                    # Nếu tìm được URL ảnh từ trang web, vẫn giữ URL ảnh từ haiphongtech.vn
-                    print(f"Đã tải ảnh sản phẩm: {image_url}")
+                image_url_result = self._download_codienhaiau_product_image(soup, url, output_dir, product_info.get('Mã sản phẩm', ''))
+                if image_url_result:
+                     product_info['Ảnh sản phẩm'] = image_url_result
+                     print(f"Đã xử lý ảnh sản phẩm: {product_info['Ảnh sản phẩm']}")
+                else:
+                     # Nếu không tải được, sử dụng URL ảnh theo định dạng yêu cầu
+                     product_info['Ảnh sản phẩm'] = f"https://haiphongtech.vn/wp-content/uploads/2025/05/{product_info.get('Mã sản phẩm', 'no_code')}.webp"
+                     print(f"Không tải được ảnh, sử dụng URL mặc định: {product_info['Ảnh sản phẩm']}")
+
             else:
                 # Nếu không có thư mục đầu ra hoặc không có mã sản phẩm, chỉ lấy URL ảnh
-                product_info['Ảnh sản phẩm'] = self._get_image_url(soup, url, product_info['Mã sản phẩm'])
+                # product_info['Ảnh sản phẩm'] = self._get_image_url(soup, url, product_info.get('Mã sản phẩm', ''))
+                # Luôn cố gắng lấy URL ảnh theo định dạng mới nếu có mã sản phẩm
+                 if product_info.get('Mã sản phẩm'):
+                     product_info['Ảnh sản phẩm'] = f"https://haiphongtech.vn/wp-content/uploads/2025/05/{product_info['Mã sản phẩm']}.webp"
+                 else:
+                      product_info['Ảnh sản phẩm'] = self._get_image_url(soup, url, product_info.get('Mã sản phẩm', ''))
+                      print(f"Không có mã sản phẩm, lấy URL ảnh từ trang web: {product_info['Ảnh sản phẩm']}")
             
-            print(f"Đã trích xuất thông tin sản phẩm: {product_info['Tên sản phẩm']}, Mã: {product_info['Mã sản phẩm']}, Giá: {product_info['Giá']}")
+            print(f"Đã trích xuất thông tin sản phẩm: {product_info.get('Tên sản phẩm', 'N/A')}, Mã: {product_info.get('Mã sản phẩm', 'N/A')}, Giá: {product_info.get('Giá', 'N/A')}")
+            
+            # Xóa trường 'index' trước khi trả về nếu nó không cần thiết ở đây
+            if 'index' in product_info:
+                 del product_info['index']
+                 
             return product_info
             
         except Exception as e:
             print(f"Lỗi khi trích xuất thông tin từ {url}: {str(e)}")
             traceback.print_exc()
+            # Trả về thông tin cơ bản đã thu thập được (nếu có) ngay cả khi có lỗi
             return product_info
 
     def extract_baa_product_info(self, url, index=1, output_dir=None):
@@ -2179,3 +2359,14 @@ class CategoryCrawler:
         
         # Nếu không tìm thấy danh mục cụ thể, trả về giá trị mặc định
         return default_pages
+
+    def _generate_basic_specs_table(self, product_code, product_name):
+        """Tạo bảng thông số kỹ thuật cơ bản với mã và tên sản phẩm"""
+        specs_html = '<table id="specifications" border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; font-family: Arial; width: 100%;"><thead><tr style="background-color: #f2f2f2;"><th>Thông số</th><th>Giá trị</th></tr></thead><tbody>'
+        if product_code:
+            specs_html += f'<tr><td style="font-weight: bold;">Mã sản phẩm</td><td>{product_code}</td></tr>'
+        if product_name:
+            specs_html += f'<tr><td style="font-weight: bold;">Tên sản phẩm</td><td>{product_name}</td></tr>'
+        specs_html += '<tr><td style="font-weight: bold;">Copyright</td><td>Haiphongtech.vn</td></tr>'
+        specs_html += '</tbody></table>'
+        return specs_html
