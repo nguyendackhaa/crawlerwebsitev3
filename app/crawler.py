@@ -124,17 +124,22 @@ def is_category_url(url):
 
 def extract_category_links(category_urls):
     """
-    Trích xuất liên kết sản phẩm từ URL danh mục
+    Trích xuất liên kết sản phẩm từ URL danh mục với đa luồng
     """
     all_product_urls = []
     processed_urls = set()
     
-    for i, url in enumerate(category_urls):
+    # Giới hạn số luồng để tránh quá tải
+    max_workers = 10
+    
+    # Tạo hàm xử lý riêng để sử dụng với ThreadPoolExecutor
+    def process_category_url(url):
+        local_product_urls = []
         try:
             # Kiểm tra đã xử lý URL này chưa
             if url in processed_urls:
                 print(f"Bỏ qua URL đã xử lý: {url}")
-                continue
+                return []
                 
             # Đánh dấu đã xử lý
             processed_urls.add(url)
@@ -150,7 +155,7 @@ def extract_category_links(category_urls):
                 html = get_html_content(url)
                 if not html:
                     print(f"Không thể lấy nội dung từ {url}")
-                    continue
+                    return []
                 
                 # Phân tích HTML
                 soup = BeautifulSoup(html, 'html.parser')
@@ -174,8 +179,8 @@ def extract_category_links(category_urls):
                                 full_url = href
                                 
                             # Thêm vào danh sách nếu chưa có
-                            if full_url not in all_product_urls:
-                                all_product_urls.append(full_url)
+                            if full_url not in local_product_urls:
+                                local_product_urls.append(full_url)
                                 print(f"Đã thêm URL sản phẩm: {full_url}")
                 else:
                     print("Không tìm thấy thẻ a.card.product__card, thử các selector khác")
@@ -199,12 +204,12 @@ def extract_category_links(category_urls):
                                     full_url = href
                                 
                                 # Thêm vào danh sách nếu chưa có
-                                if full_url not in all_product_urls and '/san-pham/' in full_url:
-                                    all_product_urls.append(full_url)
+                                if full_url not in local_product_urls and '/san-pham/' in full_url:
+                                    local_product_urls.append(full_url)
                                     print(f"Đã thêm URL sản phẩm thay thế: {full_url}")
                 
                 # Kiểm tra tìm thấy sản phẩm hoặc thông báo lỗi
-                if len(all_product_urls) == 0:
+                if len(local_product_urls) == 0:
                     print("CẢNH BÁO: Không tìm thấy sản phẩm nào trên trang đèn tháp LED!")
                     
                     # Các thẻ trực tiếp chứa sản phẩm (debug)
@@ -215,13 +220,14 @@ def extract_category_links(category_urls):
                         if dp.name == 'a' and dp.has_attr('href'):
                             print(f"DEBUG: Liên kết: {dp.get('href')}")
                 
-                print(f"Đã tìm thấy {len(all_product_urls)} URL sản phẩm từ trang đèn tháp LED.")
+                print(f"Đã tìm thấy {len(local_product_urls)} URL sản phẩm từ trang đèn tháp LED.")
                 
                 # Tìm liên kết phân trang để xử lý các trang tiếp theo
                 pagination_links = soup.select('ul.pagination li a')
                 if not pagination_links:
                     pagination_links = soup.select('.pages a, .pagination a, a[href*="page="], a[href*="/page/"]')
                 
+                new_category_urls = []
                 for page_link in pagination_links:
                     page_text = page_link.get_text(strip=True)
                     page_url = page_link.get('href')
@@ -245,24 +251,55 @@ def extract_category_links(category_urls):
                     # Bỏ qua trang hiện tại
                     if page_url == url:
                         continue
-                        
+                    
                     # Thêm vào danh sách URL cần xử lý nếu chưa xử lý
                     if page_url not in processed_urls:
                         print(f"Thêm trang phân trang: {page_url}")
-                        category_urls.append(page_url)
+                        new_category_urls.append(page_url)
                 
+                return local_product_urls, new_category_urls
             else:
                 # Xử lý các URL danh mục thông thường
                 product_urls = extract_product_urls(url)
-                
-                # Thêm vào danh sách chính
-                for product_url in product_urls:
-                    if product_url not in all_product_urls:
-                        all_product_urls.append(product_url)
+                return product_urls, []
         
         except Exception as e:
             print(f"Lỗi khi xử lý URL danh mục {url}: {str(e)}")
             print(traceback.format_exc())
+            return [], []
+    
+    # Sử dụng ThreadPoolExecutor để xử lý đa luồng
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Danh sách các URL cần xử lý (bắt đầu với các URL danh mục ban đầu)
+        urls_to_process = list(category_urls)
+        
+        while urls_to_process:
+            # Lấy một batch URLs để xử lý
+            batch = urls_to_process[:max_workers]
+            urls_to_process = urls_to_process[max_workers:]
+            
+            # Tạo các futures cho batch hiện tại
+            futures = {executor.submit(process_category_url, url): url for url in batch}
+            
+            # Xử lý kết quả khi hoàn thành
+            for future in as_completed(futures):
+                url = futures[future]
+                try:
+                    result = future.result()
+                    if result:
+                        product_urls, new_category_urls = result
+                        
+                        # Thêm các URL sản phẩm vào danh sách kết quả
+                        for product_url in product_urls:
+                            if product_url not in all_product_urls:
+                                all_product_urls.append(product_url)
+                        
+                        # Thêm các URL danh mục mới vào danh sách cần xử lý
+                        for new_url in new_category_urls:
+                            if new_url not in processed_urls and new_url not in urls_to_process:
+                                urls_to_process.append(new_url)
+                except Exception as e:
+                    print(f"Lỗi khi xử lý future cho URL {url}: {str(e)}")
     
     print(f"Tổng cộng tìm thấy {len(all_product_urls)} liên kết sản phẩm độc nhất")
     return all_product_urls
@@ -667,43 +704,91 @@ def extract_full_value(value_cell):
 
 def extract_product_urls(url):
     """
-    Trích xuất tất cả URL sản phẩm từ một URL danh mục (fix: tránh lặp vô hạn phân trang, chỉ lấy URL sản phẩm)
+    Trích xuất tất cả URL sản phẩm từ một URL danh mục (với đa luồng)
     """
     product_urls = []
     processed_pages = set()
     pages_to_process = [url]
-    while pages_to_process:
-        current_url = pages_to_process.pop(0)
-        if current_url in processed_pages:
-            continue
-        processed_pages.add(current_url)
-        print(f"Đang xử lý URL danh mục: {current_url}")
-        html = get_html_content(current_url)
-        if not html:
-            print(f"Không thể tải nội dung từ {current_url}")
-            continue
-        soup = BeautifulSoup(html, 'html.parser')
-        # Lấy các link sản phẩm thực sự (ưu tiên selector chuẩn của BAA.vn)
-        for a in soup.select('a[href*="/san-pham/"]'):
-            href = a.get('href')
-            if href:
-                if not href.startswith('http'):
-                    parsed_url = urlparse(current_url)
-                    full_url = f"{parsed_url.scheme}://{parsed_url.netloc}{href}" if href.startswith('/') else f"{current_url.rstrip('/')}/{href}"
-                else:
-                    full_url = href
-                # Chỉ thêm nếu là URL sản phẩm thực sự
-                if is_product_url(full_url) and full_url not in product_urls:
-                    product_urls.append(full_url)
-        # Xử lý phân trang, chỉ thêm trang chưa xử lý
-        for page_link in soup.select('a[href*="/page/"]'):
-            page_url = page_link.get('href')
-            if page_url:
-                if not page_url.startswith('http'):
-                    parsed_url = urlparse(current_url)
-                    page_url = f"{parsed_url.scheme}://{parsed_url.netloc}{page_url}" if page_url.startswith('/') else f"{current_url.rstrip('/')}/{page_url}"
-                if page_url not in processed_pages and page_url not in pages_to_process:
-                    pages_to_process.append(page_url)
+    
+    # Hàm xử lý trang
+    def process_page(page_url):
+        if page_url in processed_pages:
+            return [], []
+        
+        local_product_urls = []
+        next_pages = []
+        
+        try:
+            print(f"Đang xử lý URL danh mục: {page_url}")
+            html = get_html_content(page_url)
+            if not html:
+                print(f"Không thể tải nội dung từ {page_url}")
+                return [], []
+                
+            soup = BeautifulSoup(html, 'html.parser')
+            # Lấy các link sản phẩm thực sự (ưu tiên selector chuẩn của BAA.vn)
+            for a in soup.select('a[href*="/san-pham/"]'):
+                href = a.get('href')
+                if href:
+                    if not href.startswith('http'):
+                        parsed_url = urlparse(page_url)
+                        full_url = f"{parsed_url.scheme}://{parsed_url.netloc}{href}" if href.startswith('/') else f"{page_url.rstrip('/')}/{href}"
+                    else:
+                        full_url = href
+                    # Chỉ thêm nếu là URL sản phẩm thực sự
+                    if is_product_url(full_url) and full_url not in local_product_urls:
+                        local_product_urls.append(full_url)
+            
+            # Xử lý phân trang
+            for page_link in soup.select('a[href*="/page/"]'):
+                page_url = page_link.get('href')
+                if page_url:
+                    if not page_url.startswith('http'):
+                        parsed_url = urlparse(page_url)
+                        page_url = f"{parsed_url.scheme}://{parsed_url.netloc}{page_url}" if page_url.startswith('/') else f"{page_url.rstrip('/')}/{page_url}"
+                    if page_url not in processed_pages:
+                        next_pages.append(page_url)
+            
+            return local_product_urls, next_pages
+        except Exception as e:
+            print(f"Lỗi khi xử lý trang {page_url}: {str(e)}")
+            return [], []
+    
+    # Số luồng tối đa
+    max_workers = 10
+    
+    # Sử dụng ThreadPoolExecutor để xử lý đa luồng
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        while pages_to_process:
+            # Lấy một batch các trang để xử lý
+            current_batch = pages_to_process[:max_workers]
+            pages_to_process = pages_to_process[max_workers:]
+            
+            # Đánh dấu các trang đang xử lý
+            for page in current_batch:
+                processed_pages.add(page)
+            
+            # Tạo các futures cho batch hiện tại
+            future_to_url = {executor.submit(process_page, page): page for page in current_batch}
+            
+            # Xử lý kết quả khi hoàn thành
+            for future in as_completed(future_to_url):
+                page_url = future_to_url[future]
+                try:
+                    local_urls, next_pages = future.result()
+                    
+                    # Thêm các URL sản phẩm vào danh sách kết quả
+                    for product_url in local_urls:
+                        if product_url not in product_urls:
+                            product_urls.append(product_url)
+                    
+                    # Thêm các trang tiếp theo vào danh sách cần xử lý
+                    for next_page in next_pages:
+                        if next_page not in processed_pages and next_page not in pages_to_process:
+                            pages_to_process.append(next_page)
+                except Exception as e:
+                    print(f"Lỗi khi xử lý kết quả cho trang {page_url}: {str(e)}")
+    
     print(f"Đã xử lý {len(processed_pages)} trang, tìm thấy {len(product_urls)} URL sản phẩm")
     return product_urls
 
@@ -1371,7 +1456,7 @@ def download_jpg_product_image(img_info, output_folder):
         return None
 
 def download_autonics_images(product_codes, output_folder):
-    """Tải nhiều hình ảnh sản phẩm từ danh sách mã sản phẩm"""
+    """Tải nhiều hình ảnh sản phẩm từ danh sách mã sản phẩm sử dụng đa luồng"""
     # Đảm bảo thư mục đầu ra tồn tại
     os.makedirs(output_folder, exist_ok=True)
     
@@ -1405,13 +1490,14 @@ def download_autonics_images(product_codes, output_folder):
     # Số lượng sản phẩm thực tế
     actual_total = len(clean_product_codes)
     
-    for i, product_code in enumerate(clean_product_codes):
-        # Tính tiến trình
-        progress = int((i / actual_total) * 100)
-        socketio.emit('progress_update', {
-            'percent': progress,
-            'message': f'Đang xử lý sản phẩm {product_code} ({i+1}/{actual_total})'
-        })
+    # Khóa để đồng bộ hóa cập nhật kết quả
+    result_lock = threading.Lock()
+    progress_lock = threading.Lock()
+    current_processed = 0
+    
+    # Hàm xử lý tải ảnh một sản phẩm
+    def process_product(product_code, index):
+        nonlocal current_processed, successful_downloads, failed_downloads
         
         # Kết quả ban đầu
         result = {
@@ -1431,36 +1517,69 @@ def download_autonics_images(product_codes, output_folder):
             img_info = extract_product_image(product_url)
             
             if not img_info:
-                result['error'] = 'Không tìm thấy hình ảnh'
-                failed_downloads += 1
+                with result_lock:
+                    result['error'] = 'Không tìm thấy hình ảnh'
+                    failed_downloads += 1
                 print(f"Không tìm thấy hình ảnh cho sản phẩm {product_code}")
             else:
                 # Tải hình ảnh
                 img_result = download_product_image(img_info, output_folder)
                 
                 if img_result:
-                    result['status'] = 'Thành công'
-                    result['image_path'] = img_result['path']
-                    result['image_url'] = img_result['url']
-                    successful_downloads += 1
+                    with result_lock:
+                        result['status'] = 'Thành công'
+                        result['image_path'] = img_result['path']
+                        result['image_url'] = img_result['url']
+                        successful_downloads += 1
                     print(f"Tải thành công ảnh cho sản phẩm {product_code}")
                 else:
-                    result['error'] = 'Không thể tải hình ảnh'
-                    failed_downloads += 1
+                    with result_lock:
+                        result['error'] = 'Không thể tải hình ảnh'
+                        failed_downloads += 1
                     print(f"Tải ảnh thất bại cho sản phẩm {product_code}")
-            
-            # Thêm kết quả vào danh sách
-            download_results.append(result)
-            
+        
         except Exception as e:
             error_msg = str(e)
-            result['error'] = error_msg
-            download_results.append(result)
-            failed_downloads += 1
+            with result_lock:
+                result['error'] = error_msg
+                failed_downloads += 1
             print(f"Lỗi khi xử lý sản phẩm {product_code}: {error_msg}")
-            
-            # Tiếp tục với sản phẩm tiếp theo
-            continue
+        
+        # Cập nhật tiến trình
+        with progress_lock:
+            current_processed += 1
+            progress = int((current_processed / actual_total) * 100)
+            socketio.emit('progress_update', {
+                'percent': progress,
+                'message': f'Đang xử lý sản phẩm {product_code} ({current_processed}/{actual_total})'
+            })
+        
+        return result
+    
+    # Số lượng luồng tối đa
+    max_workers = min(10, actual_total)  # Tối đa 10 luồng hoặc bằng số lượng sản phẩm nếu ít hơn
+    
+    # Sử dụng ThreadPoolExecutor để xử lý đa luồng
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Tạo các task để xử lý mã sản phẩm
+        futures = {executor.submit(process_product, code, i+1): code for i, code in enumerate(clean_product_codes)}
+        
+        # Xử lý kết quả khi hoàn thành
+        for future in as_completed(futures):
+            product_code = futures[future]
+            try:
+                result = future.result()
+                download_results.append(result)
+            except Exception as e:
+                print(f"Lỗi không xác định khi xử lý {product_code}: {str(e)}")
+                # Tạo kết quả lỗi nếu có ngoại lệ không xử lý được
+                download_results.append({
+                    'product_code': product_code,
+                    'status': 'Thất bại',
+                    'image_path': None,
+                    'image_url': None,
+                    'error': f'Lỗi không xử lý được: {str(e)}'
+                })
     
     # Gửi thông báo hoàn thành
     completion_message = f'Hoàn thành! Đã tải {successful_downloads}/{actual_total} hình ảnh'
@@ -1496,7 +1615,7 @@ def download_autonics_images(product_codes, output_folder):
     return summary
 
 def download_autonics_jpg_images(product_codes, output_folder):
-    """Tải nhiều hình ảnh sản phẩm chất lượng cao dưới định dạng JPG từ danh sách mã sản phẩm"""
+    """Tải nhiều hình ảnh sản phẩm chất lượng cao dưới định dạng JPG từ danh sách mã sản phẩm với đa luồng"""
     # Đảm bảo thư mục đầu ra tồn tại
     os.makedirs(output_folder, exist_ok=True)
     
@@ -1530,15 +1649,16 @@ def download_autonics_jpg_images(product_codes, output_folder):
     # Số lượng sản phẩm thực tế
     actual_total = len(clean_product_codes)
     
-    for i, product_code in enumerate(clean_product_codes):
-        # Tính tiến trình
-        progress = int((i / actual_total) * 100)
-        socketio.emit('progress_update', {
-            'percent': progress,
-            'message': f'Đang xử lý sản phẩm {product_code} ({i+1}/{actual_total})'
-        })
+    # Khóa để đồng bộ hóa cập nhật kết quả
+    result_lock = threading.Lock()
+    progress_lock = threading.Lock()
+    current_processed = 0
+    
+    # Hàm xử lý tải ảnh một sản phẩm
+    def process_product(product_code, index):
+        nonlocal current_processed, successful_downloads, failed_downloads
         
-        # Đặt giới hạn thời gian xử lý tối đa 10 giây cho mỗi sản phẩm
+        # Đặt giới hạn thời gian xử lý tối đa cho mỗi sản phẩm
         start_time = time.time()
         
         # Kết quả ban đầu
@@ -1559,30 +1679,30 @@ def download_autonics_jpg_images(product_codes, output_folder):
             img_info = extract_product_image(product_url)
             
             if not img_info:
-                result['error'] = 'Không tìm thấy hình ảnh'
-                failed_downloads += 1
+                with result_lock:
+                    result['error'] = 'Không tìm thấy hình ảnh'
+                    failed_downloads += 1
                 print(f"Không tìm thấy hình ảnh cho sản phẩm {product_code}")
             else:
                 # Tải hình ảnh JPG chất lượng cao
                 img_result = download_jpg_product_image(img_info, output_folder)
                 
                 if img_result:
-                    result['status'] = 'Thành công'
-                    result['image_path'] = img_result['path']
-                    result['image_url'] = img_result['url']
-                    successful_downloads += 1
+                    with result_lock:
+                        result['status'] = 'Thành công'
+                        result['image_path'] = img_result['path']
+                        result['image_url'] = img_result['url']
+                        successful_downloads += 1
                     print(f"Tải thành công ảnh JPG chất lượng cao cho sản phẩm {product_code}")
                 else:
-                    result['error'] = 'Không thể tải hình ảnh'
-                    failed_downloads += 1
+                    with result_lock:
+                        result['error'] = 'Không thể tải hình ảnh'
+                        failed_downloads += 1
                     print(f"Tải ảnh JPG thất bại cho sản phẩm {product_code}")
             
             # Kiểm tra thời gian xử lý
             elapsed_time = time.time() - start_time
             print(f"Đã xử lý sản phẩm {product_code} trong {elapsed_time:.2f} giây")
-            
-            # Thêm kết quả vào danh sách
-            download_results.append(result)
             
             # Tạm dừng nếu còn thời gian trong giới hạn 10 giây
             remaining_time = 10 - elapsed_time
@@ -1591,17 +1711,50 @@ def download_autonics_jpg_images(product_codes, output_folder):
             
         except Exception as e:
             error_msg = str(e)
-            result['error'] = error_msg
-            download_results.append(result)
-            failed_downloads += 1
+            with result_lock:
+                result['error'] = error_msg
+                failed_downloads += 1
             print(f"Lỗi khi xử lý sản phẩm {product_code}: {error_msg}")
             
             # Kiểm tra thời gian đã trôi qua
             elapsed_time = time.time() - start_time
             print(f"Xử lý thất bại sau {elapsed_time:.2f} giây")
-            
-            # Tiếp tục với sản phẩm tiếp theo
-            continue
+        
+        # Cập nhật tiến trình
+        with progress_lock:
+            current_processed += 1
+            progress = int((current_processed / actual_total) * 100)
+            socketio.emit('progress_update', {
+                'percent': progress,
+                'message': f'Đang xử lý sản phẩm {product_code} ({current_processed}/{actual_total})'
+            })
+        
+        return result
+    
+    # Số lượng luồng tối đa
+    max_workers = min(10, actual_total)  # Tối đa 10 luồng hoặc bằng số lượng sản phẩm nếu ít hơn
+    
+    # Sử dụng ThreadPoolExecutor để xử lý đa luồng
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Tạo các task để xử lý mã sản phẩm
+        futures = {executor.submit(process_product, code, i+1): code for i, code in enumerate(clean_product_codes)}
+        
+        # Xử lý kết quả khi hoàn thành
+        for future in as_completed(futures):
+            product_code = futures[future]
+            try:
+                result = future.result()
+                download_results.append(result)
+            except Exception as e:
+                print(f"Lỗi không xác định khi xử lý {product_code}: {str(e)}")
+                # Tạo kết quả lỗi nếu có ngoại lệ không xử lý được
+                download_results.append({
+                    'product_code': product_code,
+                    'status': 'Thất bại',
+                    'image_path': None,
+                    'image_url': None,
+                    'error': f'Lỗi không xử lý được: {str(e)}'
+                })
     
     # Gửi thông báo hoàn thành
     completion_message = f'Hoàn thành! Đã tải {successful_downloads}/{actual_total} hình ảnh JPG chất lượng cao'
@@ -1634,202 +1787,7 @@ def download_autonics_jpg_images(product_codes, output_folder):
     except Exception as e:
         print(f"Lỗi khi tạo báo cáo: {str(e)}")
     
-    return summary 
-
-def extract_product_documents(product_url_or_code):
-    """
-    Trích xuất danh sách các tài liệu PDF từ trang BAA.vn - phiên bản tối ưu
-    
-    Hàm này tìm kiếm tài liệu PDF từ website BAA.vn bằng cách:
-    1. Truy cập trang sản phẩm
-    2. Phân tích DOM để tìm các link PDF trong các phần tử như Link_download và feature__metadata__link--download
-    
-    Cải tiến:
-    - Tăng timeout lên 60 giây
-    - Tập trung vào các selector cụ thể trong HTML
-    - Xử lý lỗi chi tiết
-    """
-    # Cache đơn giản để lưu trữ kết quả tìm kiếm
-    cache_key = str(product_url_or_code).strip().lower()
-    static_cache = getattr(extract_product_documents, 'cache', {})
-    if cache_key in static_cache:
-        print(f"Lấy kết quả từ cache cho: {product_url_or_code}")
-        return static_cache[cache_key]
-    
-    try:
-        # 1. Xác định URL sản phẩm
-        product_url = None
-        
-        # Nếu là URL, sử dụng trực tiếp
-        if isinstance(product_url_or_code, str) and product_url_or_code.startswith('http'):
-            product_url = product_url_or_code
-            print(f"Sử dụng URL trực tiếp: {product_url}")
-        else:
-            # Nếu là mã sản phẩm, tìm URL tương ứng
-            product_url = get_product_url(product_url_or_code)
-            if not product_url:
-                print(f"Không tìm thấy URL sản phẩm cho mã: {product_url_or_code}")
-                static_cache[cache_key] = []
-                return []
-        
-        # 2. Tải trang sản phẩm với timeout tăng lên 60 giây
-        print(f"Đang tải trang sản phẩm: {product_url}")
-        
-        # Tạo session với User-Agent giống trình duyệt
-        session = requests.Session()
-        session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Connection': 'keep-alive',
-            'Referer': 'https://baa.vn/'
-        })
-        
-        # Tải trang với timeout 60 giây
-        product_response = session.get(product_url, timeout=60)
-        product_html = product_response.text
-        
-        # Parse HTML
-        product_soup = BeautifulSoup(product_html, 'html.parser')
-        
-        # 3. Tìm kiếm các link PDF
-        document_links = []
-        
-        # Tìm kiếm các liên kết tải tài liệu theo mẫu trong ví dụ
-        # a. Tìm Link_download
-        download_links = product_soup.select('a#Link_download[href$=".pdf"]')
-        for link in download_links:
-            href = link.get('href')
-            if href:
-                # Tìm tên file từ các phần tử liên quan
-                parent_tr = link.find_parent('tr')
-                if parent_tr:
-                    filelink_elem = parent_tr.select_one('.filelink')
-                    if filelink_elem:
-                        name = filelink_elem.text.strip()
-                    else:
-                        name = href.split('/')[-1]
-                else:
-                    name = href.split('/')[-1]
-                
-                document_links.append({
-                    'url': href,
-                    'name': name
-                })
-                print(f"Đã tìm thấy link tải tài liệu (#Link_download): {name} - {href}")
-        
-        # b. Tìm .feature__metadata__link--download
-        feature_links = product_soup.select('.feature__metadata__link--download[href$=".pdf"], span.feature__metadata__link--download')
-        for link in feature_links:
-            href = link.get('href')
-            
-            # Trường hợp span chứa href
-            if not href and isinstance(link, Tag):
-                href = link.get('href')
-            
-            # Một số trường hợp span không có href trực tiếp
-            if not href:
-                parent = link.parent
-                if parent and parent.name == 'a':
-                    href = parent.get('href')
-                elif parent:
-                    a_tag = parent.find('a')
-                    if a_tag:
-                        href = a_tag.get('href')
-            
-            if href and '.pdf' in href.lower():
-                # Tìm tên file
-                filelink_elem = link.select_one('.filelink')
-                if filelink_elem:
-                    name = filelink_elem.text.strip()
-                else:
-                    name = href.split('/')[-1]
-                
-                # Đảm bảo URL đầy đủ
-                if not href.startswith('http'):
-                    href = urljoin(product_url, href)
-                
-                document_links.append({
-                    'url': href,
-                    'name': name
-                })
-                print(f"Đã tìm thấy link tải tài liệu (.feature__metadata__link--download): {name} - {href}")
-        
-        # c. Tìm kiếm trong các bảng có chứa liên kết tài liệu
-        catalog_tables = product_soup.select('.product-tab-content table, .tab-content table')
-        for table in catalog_tables:
-            for row in table.find_all('tr'):
-                # Tìm các ô có chứa icon file và link PDF
-                file_cells = row.select('td i.bi-file-earmark-text, td i.bi-file-pdf, td .filelink')
-                if file_cells:
-                    # Tìm link download trong hàng này
-                    download_link = row.select_one('a[href$=".pdf"]')
-                    if download_link:
-                        href = download_link.get('href')
-                        
-                        # Tìm tên file
-                        filelink_elem = row.select_one('.filelink')
-                        if filelink_elem:
-                            name = filelink_elem.text.strip()
-                        else:
-                            name = href.split('/')[-1]
-                        
-                        # Đảm bảo URL đầy đủ
-                        if not href.startswith('http'):
-                            href = urljoin(product_url, href)
-                        
-                        document_links.append({
-                            'url': href,
-                            'name': name
-                        })
-                        print(f"Đã tìm thấy link tải tài liệu (tìm trong bảng): {name} - {href}")
-        
-        # d. Kiểm tra tất cả các link có chứa PDF
-        all_pdf_links = product_soup.select('a[href$=".pdf"]')
-        for link in all_pdf_links:
-            href = link.get('href')
-            if href and 'document' in href.lower():
-                name = link.text.strip()
-                if not name:
-                    name = href.split('/')[-1]
-                
-                # Đảm bảo URL đầy đủ
-                if not href.startswith('http'):
-                    href = urljoin(product_url, href)
-                
-                document_links.append({
-                    'url': href,
-                    'name': name
-                })
-                print(f"Đã tìm thấy link PDF khác: {name} - {href}")
-        
-        # 4. Loại bỏ các link trùng lặp
-        unique_links = []
-        added_urls = set()
-        
-        for link in document_links:
-            if link['url'] not in added_urls:
-                added_urls.add(link['url'])
-                unique_links.append(link)
-        
-        print(f"Tìm thấy {len(unique_links)} tài liệu PDF không trùng lặp")
-        
-        # Lưu vào cache
-        static_cache[cache_key] = unique_links
-        
-        return unique_links
-    
-    except Exception as e:
-        print(f"Lỗi khi trích xuất tài liệu từ {product_url_or_code}: {str(e)}")
-        traceback.print_exc()
-        # Khởi tạo cache nếu chưa có
-        if not hasattr(extract_product_documents, 'cache'):
-            extract_product_documents.cache = {}
-        static_cache[cache_key] = []
-        return []
-
-# Khởi tạo cache cho hàm
-extract_product_documents.cache = {}
+    return summary
 
 def download_product_document(doc_info, output_folder):
     """
@@ -1980,7 +1938,7 @@ def download_product_document(doc_info, output_folder):
 
 def download_product_documents(product_codes_or_urls, output_folder='output_documents'):
     """
-    Tải tất cả tài liệu cho danh sách mã sản phẩm hoặc URL
+    Tải tất cả tài liệu cho danh sách mã sản phẩm hoặc URL sử dụng đa luồng
     
     Args:
         product_codes_or_urls (list): Danh sách mã sản phẩm hoặc URL
@@ -2010,30 +1968,67 @@ def download_product_documents(product_codes_or_urls, output_folder='output_docu
     skipped_codes = []
     product_results = {}
     
-    # Duyệt qua từng mã sản phẩm hoặc URL
-    for i, item in enumerate(product_codes_or_urls, 1):
-        print(f"\n[{i}/{total_products}] Đang xử lý: {item}")
-        
-        # Xác định xem đầu vào là URL hay mã sản phẩm
-        if item.startswith('http'):
-            product_url = item
-            # Trích xuất mã sản phẩm từ URL nếu có thể
-            try:
-                parts = product_url.split('/')
-                product_code = parts[-1] if parts[-1] else parts[-2]
+    # Khóa đồng bộ hóa cho các biến toàn cục
+    result_lock = threading.Lock()
+    
+    # Định nghĩa hàm xử lý cho mỗi sản phẩm
+    def process_product(item, index):
+        try:
+            print(f"\n[{index}/{total_products}] Đang xử lý: {item}")
+            
+            # Xác định xem đầu vào là URL hay mã sản phẩm
+            if item.startswith('http'):
+                product_url = item
+                # Trích xuất mã sản phẩm từ URL nếu có thể
+                try:
+                    parts = product_url.split('/')
+                    product_code = parts[-1] if parts[-1] else parts[-2]
+                    
+                    # Trích xuất tên sản phẩm từ URL (với URL từ baa.vn)
+                    product_name = ""
+                    if 'baa.vn' in product_url:
+                        # Tìm tên sản phẩm từ phần cuối URL - thường có dạng ten-san-pham_xyz
+                        product_code_parts = product_code.split('_')
+                        if len(product_code_parts) > 0:
+                            product_slug = product_code_parts[0]
+                            # Chuyển slug thành tên đẹp hơn
+                            product_name = ' '.join([part.capitalize() for part in product_slug.split('-')])
+                    
+                    # Nếu không thể trích xuất tên từ URL, thử tải trang sản phẩm
+                    if not product_name or product_name == product_code:
+                        try:
+                            # Tạo session với User-Agent giống trình duyệt
+                            session = requests.Session()
+                            session.headers.update({
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+                            })
+                            response = session.get(product_url, timeout=30)
+                            soup = BeautifulSoup(response.text, 'html.parser')
+                            
+                            # Thử tìm tên sản phẩm từ các selector thường gặp
+                            name_selectors = [
+                                'h1.product-title', '.product-name h1', '.page-title h1', 
+                                '.product__name', '.product-detail h1', '.product-title'
+                            ]
+                            
+                            for selector in name_selectors:
+                                name_elem = soup.select_one(selector)
+                                if name_elem:
+                                    product_name = name_elem.text.strip()
+                                    print(f"  Tìm thấy tên sản phẩm: {product_name}")
+                                    break
+                        except Exception as e:
+                            print(f"  Không thể trích xuất tên sản phẩm từ trang: {str(e)}")
+                except:
+                    product_code = f"product_{index}"
+                    product_name = f"Product {index}"
+            else:
+                product_code = item
+                product_url = get_product_url(product_code)
+                product_name = f"Product {product_code}"  # Default name
                 
-                # Trích xuất tên sản phẩm từ URL (với URL từ baa.vn)
-                product_name = ""
-                if 'baa.vn' in product_url:
-                    # Tìm tên sản phẩm từ phần cuối URL - thường có dạng ten-san-pham_xyz
-                    product_code_parts = product_code.split('_')
-                    if len(product_code_parts) > 0:
-                        product_slug = product_code_parts[0]
-                        # Chuyển slug thành tên đẹp hơn
-                        product_name = ' '.join([part.capitalize() for part in product_slug.split('-')])
-                
-                # Nếu không thể trích xuất tên từ URL, thử tải trang sản phẩm
-                if not product_name or product_name == product_code:
+                # Thử lấy tên sản phẩm từ URL
+                if product_url:
                     try:
                         # Tạo session với User-Agent giống trình duyệt
                         session = requests.Session()
@@ -2057,114 +2052,85 @@ def download_product_documents(product_codes_or_urls, output_folder='output_docu
                                 break
                     except Exception as e:
                         print(f"  Không thể trích xuất tên sản phẩm từ trang: {str(e)}")
-            except:
-                product_code = f"product_{i}"
-                product_name = f"Product {i}"
-        else:
-            product_code = item
-            product_url = get_product_url(product_code)
-            product_name = f"Product {product_code}"  # Default name
             
-            # Thử lấy tên sản phẩm từ URL
-            if product_url:
-                try:
-                    # Tạo session với User-Agent giống trình duyệt
-                    session = requests.Session()
-                    session.headers.update({
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
-                    })
-                    response = session.get(product_url, timeout=30)
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    
-                    # Thử tìm tên sản phẩm từ các selector thường gặp
-                    name_selectors = [
-                        'h1.product-title', '.product-name h1', '.page-title h1', 
-                        '.product__name', '.product-detail h1', '.product-title'
-                    ]
-                    
-                    for selector in name_selectors:
-                        name_elem = soup.select_one(selector)
-                        if name_elem:
-                            product_name = name_elem.text.strip()
-                            print(f"  Tìm thấy tên sản phẩm: {product_name}")
-                            break
-                except Exception as e:
-                    print(f"  Không thể trích xuất tên sản phẩm từ trang: {str(e)}")
-        
-        # Bỏ qua nếu không tìm thấy URL sản phẩm
-        if not product_url:
-            print(f"  Không thể tạo URL cho mã sản phẩm: {product_code}")
-            skipped_codes.append(product_code)
-            product_results[product_code] = {
-                'product_name': product_name,
-                'success': False,
-                'message': 'Không thể tạo URL sản phẩm',
-                'documents': [],
-                'failed_documents': [],
-                'successful_documents': 0,
-                'total_documents': 0,
-                'failed_documents_count': 0
-            }
-            continue
-        
-        # Tạo thư mục cho sản phẩm - tất cả tài liệu của cùng một sản phẩm sẽ được lưu trong cùng một thư mục
-        product_folder = os.path.join(output_folder, product_code)
-        os.makedirs(product_folder, exist_ok=True)
-        
-        try:
+            # Bỏ qua nếu không tìm thấy URL sản phẩm
+            if not product_url:
+                print(f"  Không thể tạo URL cho mã sản phẩm: {product_code}")
+                with result_lock:
+                    skipped_codes.append(product_code)
+                    product_results[product_code] = {
+                        'product_name': product_name,
+                        'success': False,
+                        'message': 'Không thể tạo URL sản phẩm',
+                        'documents': [],
+                        'failed_documents': [],
+                        'successful_documents': 0,
+                        'total_documents': 0,
+                        'failed_documents_count': 0
+                    }
+                return None
+            
+            # Tạo thư mục cho sản phẩm - tất cả tài liệu của cùng một sản phẩm sẽ được lưu trong cùng một thư mục
+            product_folder = os.path.join(output_folder, product_code)
+            os.makedirs(product_folder, exist_ok=True)
+            
             # Trích xuất liên kết tài liệu
             document_links = extract_product_documents(product_url)
             
             if not document_links:
                 print(f"  Không tìm thấy tài liệu nào cho {product_code}")
-                failed_products += 1
-                product_results[product_code] = {
-                    'product_name': product_name,
-                    'success': False,
-                    'message': 'Không tìm thấy tài liệu',
-                    'documents': [],
-                    'failed_documents': [],
-                    'successful_documents': 0,
-                    'total_documents': 0,
-                    'failed_documents_count': 0
-                }
-                continue
+                with result_lock:
+                    failed_products += 1
+                    product_results[product_code] = {
+                        'product_name': product_name,
+                        'success': False,
+                        'message': 'Không tìm thấy tài liệu',
+                        'documents': [],
+                        'failed_documents': [],
+                        'successful_documents': 0,
+                        'total_documents': 0,
+                        'failed_documents_count': 0
+                    }
+                return None
             
             print(f"  Tìm thấy {len(document_links)} tài liệu")
             
-            # Tải tài liệu và theo dõi kết quả
+            # Tải tài liệu sử dụng đa luồng trong mỗi sản phẩm
             documents = []
             failed_documents = []
             
-            for j, doc_link in enumerate(document_links, 1):
-                print(f"  Đang tải [{j}/{len(document_links)}]: {doc_link}")
-                result = download_product_document(doc_link, product_folder)
+            # Sử dụng ThreadPoolExecutor để tải các tài liệu của sản phẩm
+            with ThreadPoolExecutor(max_workers=5) as doc_executor:
+                doc_futures = {doc_executor.submit(download_product_document, doc_link, product_folder): doc_link for doc_link in document_links}
                 
-                if result['success']:
-                    documents.append(result)
-                    print(f"    ✓ Đã tải: {result['path']}")
-                else:
-                    failed_documents.append(result)
-                    print(f"    ✗ Lỗi: {result['error']}")
+                for future in as_completed(doc_futures):
+                    doc_link = doc_futures[future]
+                    try:
+                        result = future.result()
+                        if result['success']:
+                            documents.append(result)
+                            print(f"    ✓ Đã tải: {result['path']}")
+                        else:
+                            failed_documents.append(result)
+                            print(f"    ✗ Lỗi: {result['error']}")
+                    except Exception as e:
+                        print(f"    ✗ Lỗi khi tải tài liệu {doc_link['url']}: {str(e)}")
+                        failed_documents.append({
+                            'success': False,
+                            'error': str(e),
+                            'url': doc_link.get('url', ''),
+                            'name': doc_link.get('name', '')
+                        })
             
             # Cập nhật số liệu thống kê
             successful_documents = len(documents)
             failed_documents_count = len(failed_documents)
             
-            if successful_documents > 0:
-                successful_products += 1
-                success = True
-                message = f"Tải thành công {successful_documents}/{len(document_links)} tài liệu"
-            else:
-                failed_products += 1
-                success = False
-                message = "Không tài liệu nào được tải thành công"
-            
-            # Lưu kết quả cho sản phẩm này
-            product_results[product_code] = {
+            product_result = {
                 'product_name': product_name,
-                'success': success,
-                'message': message,
+                'success': successful_documents > 0,
+                'message': f"Tải thành công {successful_documents}/{len(document_links)} tài liệu" if successful_documents > 0 
+                          else "Không tài liệu nào được tải thành công",
                 'documents': documents,
                 'failed_documents': failed_documents,
                 'successful_documents': successful_documents,
@@ -2172,24 +2138,55 @@ def download_product_documents(product_codes_or_urls, output_folder='output_docu
                 'failed_documents_count': failed_documents_count
             }
             
+            # Cập nhật kết quả tổng hợp
+            with result_lock:
+                if successful_documents > 0:
+                    successful_products += 1
+                else:
+                    failed_products += 1
+                product_results[product_code] = product_result
+            
             # In kết quả tạm thời
             print(f"  Kết quả: {successful_documents} thành công, {failed_documents_count} thất bại")
+            return product_result
             
         except Exception as e:
-            print(f"  Lỗi khi tải tài liệu cho {product_code}: {str(e)}")
+            print(f"  Lỗi khi tải tài liệu cho {item}: {str(e)}")
             traceback.print_exc()
-            failed_products += 1
             
-            product_results[product_code] = {
-                'product_name': product_name,
-                'success': False,
-                'message': f"Lỗi: {str(e)}",
-                'documents': [],
-                'failed_documents': [],
-                'successful_documents': 0,
-                'total_documents': 0,
-                'failed_documents_count': 0
-            }
+            with result_lock:
+                failed_products += 1
+                # Đảm bảo chúng ta có product_code ngay cả khi xảy ra lỗi sớm
+                if 'product_code' not in locals():
+                    product_code = f"unknown_{index}"
+                if 'product_name' not in locals():
+                    product_name = f"Unknown Product {index}"
+                
+                product_results[product_code] = {
+                    'product_name': product_name,
+                    'success': False,
+                    'message': f"Lỗi: {str(e)}",
+                    'documents': [],
+                    'failed_documents': [],
+                    'successful_documents': 0,
+                    'total_documents': 0,
+                    'failed_documents_count': 0
+                }
+            return None
+    
+    # Sử dụng ThreadPoolExecutor để xử lý nhiều sản phẩm cùng lúc
+    max_workers = min(10, total_products)  # Tối đa 10 luồng
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = []
+        for i, item in enumerate(product_codes_or_urls, 1):
+            futures.append(executor.submit(process_product, item, i))
+        
+        # Đợi tất cả hoàn thành
+        for future in futures:
+            try:
+                future.result()
+            except Exception as e:
+                print(f"Lỗi không mong muốn trong quá trình xử lý: {str(e)}")
     
     # Tạo báo cáo tổng hợp
     print("\n--- Kết quả tải tài liệu ---")
@@ -2456,7 +2453,7 @@ def get_random_headers():
     return headers
 
 def download_baa_product_images(url_file, output_folder):
-    """Tải ảnh sản phẩm từ BAA.vn dựa trên file URL"""
+    """Tải ảnh sản phẩm từ BAA.vn dựa trên file URL sử dụng đa luồng"""
     results = []
     
     if not os.path.exists(output_folder):
@@ -2469,8 +2466,18 @@ def download_baa_product_images(url_file, output_folder):
     total_urls = len(urls)
     print(f"Tổng số URL cần xử lý: {total_urls}")
     
-    # Truy cập từng URL và tải ảnh
-    for index, url in enumerate(urls, 1):
+    # Đếm số URL đã xử lý và số lượng thành công
+    processed_count = 0
+    success_count = 0
+    
+    # Khóa đồng bộ hóa
+    result_lock = threading.Lock()
+    counter_lock = threading.Lock()
+    
+    # Hàm xử lý riêng cho mỗi URL
+    def process_url(url, index):
+        nonlocal processed_count, success_count
+        
         print(f"[{index}/{total_urls}] Đang xử lý: {url}")
         try:
             # Tải nội dung trang
@@ -2619,6 +2626,9 @@ def download_baa_product_images(url_file, output_folder):
                             print(f"  > Đã lưu ảnh: {image_path}")
                             result['Trạng thái'] = 'Thành công'
                             result['Ảnh sản phẩm'] = image_filename
+                            
+                            with counter_lock:
+                                success_count += 1
                             break
                         except (requests.RequestException, Exception) as e:
                             print(f"  > Lỗi khi tải ảnh ({attempt+1}/3): {str(e)}")
@@ -2635,17 +2645,44 @@ def download_baa_product_images(url_file, output_folder):
                 result['Trạng thái'] = 'Lỗi'
                 result['Lỗi'] = 'Không tìm thấy ảnh sản phẩm'
             
-            results.append(result)
+            with result_lock:
+                results.append(result)
+            
+            with counter_lock:
+                processed_count += 1
+            
+            return result
             
         except Exception as e:
             print(f"  > Lỗi khi xử lý URL {url}: {str(e)}")
-            results.append({
+            error_result = {
                 'URL': url,
                 'Mã sản phẩm': 'Không xác định',
                 'Trạng thái': 'Lỗi',
                 'Ảnh sản phẩm': '',
                 'Lỗi': str(e)
-            })
+            }
+            
+            with result_lock:
+                results.append(error_result)
+            
+            with counter_lock:
+                processed_count += 1
+                
+            return error_result
+    
+    # Sử dụng ThreadPoolExecutor để xử lý đa luồng
+    max_workers = min(10, total_urls)  # Tối đa 10 luồng
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_url = {executor.submit(process_url, url, i+1): url for i, url in enumerate(urls)}
+        
+        # Xử lý kết quả khi hoàn thành
+        for future in as_completed(future_to_url):
+            url = future_to_url[future]
+            try:
+                future.result()
+            except Exception as e:
+                print(f"Lỗi không mong muốn khi xử lý {url}: {str(e)}")
     
     # Tạo báo cáo Excel
     report_file = os.path.join(output_folder, 'baa_images_report.xlsx')
@@ -2721,8 +2758,11 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
             'report_file': None
         }
         
-        # Lặp qua từng URL sản phẩm
-        for i, url in enumerate(product_urls, 1):
+        # Khóa đồng bộ hóa kết quả
+        result_lock = threading.Lock()
+        
+        # Hàm xử lý cho mỗi URL sản phẩm
+        def process_product_url(url, i):
             print(f"\n[{i}/{len(product_urls)}] Đang xử lý URL: {url}")
             
             # Khởi tạo dữ liệu báo cáo cho URL này
@@ -2868,11 +2908,13 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                 
                 # Nếu không tìm thấy ảnh nào, thông báo thất bại
                 if not img_url:
-                    results['failed'] += 1
+                    with result_lock:
+                        results['failed'] += 1
                     report_item['Lý do lỗi'] = 'Không tìm thấy ảnh sản phẩm'
-                    results['report_data'].append(report_item)
+                    with result_lock:
+                        results['report_data'].append(report_item)
                     print(f"  ✗ Không tìm thấy ảnh cho URL: {url}")
-                    continue
+                    return report_item
                 
                 # Chuẩn hóa URL ảnh
                 base_url = '{uri.scheme}://{uri.netloc}'.format(uri=urlparse(url))
@@ -2913,8 +2955,9 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                     img.save(img_path, 'WEBP', quality=95)
                     
                     # Cập nhật kết quả
-                    results['success'] += 1
-                    results['image_paths'].append(img_path)
+                    with result_lock:
+                        results['success'] += 1
+                        results['image_paths'].append(img_path)
                     report_item['Trạng thái'] = 'Thành công'
                     report_item['Đường dẫn ảnh'] = img_path
                     report_item['Kích thước ảnh'] = img_size
@@ -2950,37 +2993,59 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                             img.save(img_path, 'WEBP', quality=95)
                             
                             # Cập nhật kết quả
-                            results['success'] += 1
-                            results['image_paths'].append(img_path)
+                            with result_lock:
+                                results['success'] += 1
+                                results['image_paths'].append(img_path)
                             report_item['Trạng thái'] = 'Thành công'
                             report_item['Đường dẫn ảnh'] = img_path
                             report_item['Kích thước ảnh'] = img_size
                             
                             print(f"  ✓ Đã lưu ảnh kích thước 300px: {img_filename} ({img_size})")
                         except Exception as inner_e:
-                            results['failed'] += 1
+                            with result_lock:
+                                results['failed'] += 1
                             report_item['Lý do lỗi'] = f"Lỗi khi tải ảnh: {str(e)} và {str(inner_e)}"
                     else:
-                        results['failed'] += 1
+                        with result_lock:
+                            results['failed'] += 1
                         report_item['Lý do lỗi'] = f"Lỗi HTTP: {str(e)}"
                 
                 except Exception as e:
                     print(f"  ✗ Lỗi khi tải ảnh: {str(e)}")
-                    results['failed'] += 1
+                    with result_lock:
+                        results['failed'] += 1
                     report_item['Lý do lỗi'] = f"Lỗi khi tải ảnh: {str(e)}"
                 
                 # Thêm vào dữ liệu báo cáo
-                results['report_data'].append(report_item)
+                with result_lock:
+                    results['report_data'].append(report_item)
                 
                 # Nghỉ giữa các yêu cầu để tránh bị chặn
                 time.sleep(0.5)
                 
+                return report_item
+                
             except Exception as e:
-                results['failed'] += 1
+                with result_lock:
+                    results['failed'] += 1
                 report_item['Lý do lỗi'] = f"Lỗi: {str(e)}"
-                results['report_data'].append(report_item)
+                with result_lock:
+                    results['report_data'].append(report_item)
                 print(f"Lỗi khi xử lý URL {url}: {str(e)}")
                 traceback.print_exc()
+                return report_item
+        
+        # Xử lý đa luồng
+        max_workers = min(10, len(product_urls))  # Tối đa 10 luồng
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(process_product_url, url, i+1): url for i, url in enumerate(product_urls)}
+            
+            for future in as_completed(futures):
+                url = futures[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    print(f"Lỗi không xử lý được: {str(e)}")
         
         # Tạo báo cáo Excel
         try:
@@ -3326,3 +3391,198 @@ def extract_product_price(url, index=1):
         'Mã sản phẩm': "",
         'Giá': ""
     }
+
+def extract_product_documents(product_url_or_code):
+    """
+    Trích xuất danh sách các tài liệu PDF từ trang BAA.vn - phiên bản tối ưu
+    
+    Hàm này tìm kiếm tài liệu PDF từ website BAA.vn bằng cách:
+    1. Truy cập trang sản phẩm
+    2. Phân tích DOM để tìm các link PDF trong các phần tử như Link_download và feature__metadata__link--download
+    
+    Cải tiến:
+    - Tăng timeout lên 60 giây
+    - Tập trung vào các selector cụ thể trong HTML
+    - Xử lý lỗi chi tiết
+    """
+    # Cache đơn giản để lưu trữ kết quả tìm kiếm
+    cache_key = str(product_url_or_code).strip().lower()
+    static_cache = getattr(extract_product_documents, 'cache', {})
+    if cache_key in static_cache:
+        print(f"Lấy kết quả từ cache cho: {product_url_or_code}")
+        return static_cache[cache_key]
+    
+    try:
+        # 1. Xác định URL sản phẩm
+        product_url = None
+        
+        # Nếu là URL, sử dụng trực tiếp
+        if isinstance(product_url_or_code, str) and product_url_or_code.startswith('http'):
+            product_url = product_url_or_code
+            print(f"Sử dụng URL trực tiếp: {product_url}")
+        else:
+            # Nếu là mã sản phẩm, tìm URL tương ứng
+            product_url = get_product_url(product_url_or_code)
+            if not product_url:
+                print(f"Không tìm thấy URL sản phẩm cho mã: {product_url_or_code}")
+                static_cache[cache_key] = []
+                return []
+        
+        # 2. Tải trang sản phẩm với timeout tăng lên 60 giây
+        print(f"Đang tải trang sản phẩm: {product_url}")
+        
+        # Tạo session với User-Agent giống trình duyệt
+        session = requests.Session()
+        session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Connection': 'keep-alive',
+            'Referer': 'https://baa.vn/'
+        })
+        
+        # Tải trang với timeout 60 giây
+        product_response = session.get(product_url, timeout=60)
+        product_html = product_response.text
+        
+        # Parse HTML
+        product_soup = BeautifulSoup(product_html, 'html.parser')
+        
+        # 3. Tìm kiếm các link PDF
+        document_links = []
+        
+        # Tìm kiếm các liên kết tải tài liệu theo mẫu trong ví dụ
+        # a. Tìm Link_download
+        download_links = product_soup.select('a#Link_download[href$=".pdf"]')
+        for link in download_links:
+            href = link.get('href')
+            if href:
+                # Tìm tên file từ các phần tử liên quan
+                parent_tr = link.find_parent('tr')
+                if parent_tr:
+                    filelink_elem = parent_tr.select_one('.filelink')
+                    if filelink_elem:
+                        name = filelink_elem.text.strip()
+                    else:
+                        name = href.split('/')[-1]
+                else:
+                    name = href.split('/')[-1]
+                
+                document_links.append({
+                    'url': href,
+                    'name': name
+                })
+                print(f"Đã tìm thấy link tải tài liệu (#Link_download): {name} - {href}")
+        
+        # b. Tìm .feature__metadata__link--download
+        feature_links = product_soup.select('.feature__metadata__link--download[href$=".pdf"], span.feature__metadata__link--download')
+        for link in feature_links:
+            href = link.get('href')
+            
+            # Trường hợp span chứa href
+            if not href and isinstance(link, Tag):
+                href = link.get('href')
+            
+            # Một số trường hợp span không có href trực tiếp
+            if not href:
+                parent = link.parent
+                if parent and parent.name == 'a':
+                    href = parent.get('href')
+                elif parent:
+                    a_tag = parent.find('a')
+                    if a_tag:
+                        href = a_tag.get('href')
+            
+            if href and '.pdf' in href.lower():
+                # Tìm tên file
+                filelink_elem = link.select_one('.filelink')
+                if filelink_elem:
+                    name = filelink_elem.text.strip()
+                else:
+                    name = href.split('/')[-1]
+                
+                # Đảm bảo URL đầy đủ
+                if not href.startswith('http'):
+                    href = urljoin(product_url, href)
+                
+                document_links.append({
+                    'url': href,
+                    'name': name
+                })
+                print(f"Đã tìm thấy link tải tài liệu (.feature__metadata__link--download): {name} - {href}")
+        
+        # c. Tìm kiếm trong các bảng có chứa liên kết tài liệu
+        catalog_tables = product_soup.select('.product-tab-content table, .tab-content table')
+        for table in catalog_tables:
+            for row in table.find_all('tr'):
+                # Tìm các ô có chứa icon file và link PDF
+                file_cells = row.select('td i.bi-file-earmark-text, td i.bi-file-pdf, td .filelink')
+                if file_cells:
+                    # Tìm link download trong hàng này
+                    download_link = row.select_one('a[href$=".pdf"]')
+                    if download_link:
+                        href = download_link.get('href')
+                        
+                        # Tìm tên file
+                        filelink_elem = row.select_one('.filelink')
+                        if filelink_elem:
+                            name = filelink_elem.text.strip()
+                        else:
+                            name = href.split('/')[-1]
+                        
+                        # Đảm bảo URL đầy đủ
+                        if not href.startswith('http'):
+                            href = urljoin(product_url, href)
+                        
+                        document_links.append({
+                            'url': href,
+                            'name': name
+                        })
+                        print(f"Đã tìm thấy link tải tài liệu (tìm trong bảng): {name} - {href}")
+        
+        # d. Kiểm tra tất cả các link có chứa PDF
+        all_pdf_links = product_soup.select('a[href$=".pdf"]')
+        for link in all_pdf_links:
+            href = link.get('href')
+            if href and 'document' in href.lower():
+                name = link.text.strip()
+                if not name:
+                    name = href.split('/')[-1]
+                
+                # Đảm bảo URL đầy đủ
+                if not href.startswith('http'):
+                    href = urljoin(product_url, href)
+                
+                document_links.append({
+                    'url': href,
+                    'name': name
+                })
+                print(f"Đã tìm thấy link PDF khác: {name} - {href}")
+        
+        # 4. Loại bỏ các link trùng lặp
+        unique_links = []
+        added_urls = set()
+        
+        for link in document_links:
+            if link['url'] not in added_urls:
+                added_urls.add(link['url'])
+                unique_links.append(link)
+        
+        print(f"Tìm thấy {len(unique_links)} tài liệu PDF không trùng lặp")
+        
+        # Lưu vào cache
+        static_cache[cache_key] = unique_links
+        
+        return unique_links
+    
+    except Exception as e:
+        print(f"Lỗi khi trích xuất tài liệu từ {product_url_or_code}: {str(e)}")
+        traceback.print_exc()
+        # Khởi tạo cache nếu chưa có
+        if not hasattr(extract_product_documents, 'cache'):
+            extract_product_documents.cache = {}
+        static_cache[cache_key] = []
+        return []
+
+# Khởi tạo cache cho hàm
+extract_product_documents.cache = {}

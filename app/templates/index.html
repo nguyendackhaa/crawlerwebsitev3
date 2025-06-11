@@ -99,7 +99,7 @@
             </li>
             <li class="nav-item" role="presentation">
                     <button class="nav-link {% if active_tab == 'view-images-tab' %}active{% endif %}" id="view-images-tab" data-bs-toggle="tab" data-bs-target="#view-images" type="button" role="tab" aria-controls="view-images" aria-selected="{% if active_tab == 'view-images-tab' %}true{% else %}false{% endif %}">
-                    4. Chuyển đổi ảnh JPG sang WebP
+                    4. Chuyển đổi ảnh JPG sang WebP THỰC SỰ
                 </button>
             </li>
             <li class="nav-item" role="presentation">
@@ -305,39 +305,64 @@
             <!-- Tab xem ảnh đã tải xuống -->
             <div class="tab-pane fade" id="view-images" role="tabpanel" aria-labelledby="view-images-tab">
                 <div class="form-container">
-                    <h4 class="mb-3">Chuyển đổi ảnh JPG sang WebP</h4>
+                    <h4 class="mb-3">Chuyển đổi ảnh JPG sang WebP THỰC SỰ</h4>
                     
                     <div class="data-format">
                         <h5>Thông tin về chức năng</h5>
-                        <p>Chức năng này cho phép bạn tải lên ảnh JPG và chuyển đổi sang định dạng WebP:</p>
+                        <p>Chức năng này chuyển đổi ảnh sang định dạng WebP <strong>THỰC SỰ</strong> với các đảm bảo:</p>
                         <ol>
-                            <li>Tải lên các file ảnh định dạng JPG, JPEG, PNG</li>
-                            <li>Hệ thống sẽ tự động chuyển đổi sang định dạng WebP</li>
-                            <li>Tải xuống file WebP sau khi chuyển đổi</li>
+                            <li>✅ <strong>Định dạng file là .webp</strong> - Đuôi file chính xác</li>
+                            <li>✅ <strong>Nội dung ảnh là WebP thực sự</strong> - Kiểm tra file signature RIFF/WEBP</li>
+                            <li>✅ <strong>MIME type chính xác</strong> - image/webp, không phải image/jpeg đội lốt</li>
+                            <li>✅ <strong>Tương thích hoàn toàn</strong> - Không bị WordPress, trình duyệt hoặc bất kỳ plugin nào (ShortPixel, Imagify...) hiểu nhầm</li>
+                            <li>✅ <strong>Nén tối ưu</strong> - Sử dụng thuật toán nén WebP tốt nhất (method 6)</li>
+                            <li>✅ <strong>Báo cáo chi tiết</strong> - File Excel với thông tin xác minh cho từng ảnh</li>
                         </ol>
+                        <div class="alert alert-success mt-3">
+                            <i class="bi bi-shield-check me-2"></i>
+                            <strong>Đảm bảo 100%:</strong> Mọi file output đều được kiểm tra nghiêm ngặt bằng 3 phương pháp:
+                            <ul class="mb-0 mt-2">
+                                <li>Kiểm tra file signature (12 bytes đầu: RIFF + WEBP)</li>
+                                <li>Kiểm tra MIME type thực tế của file</li>
+                                <li>Xác minh format qua thư viện xử lý ảnh PIL</li>
+                            </ul>
+                        </div>
                     </div>
                     
                     <div class="steps">
                         <div class="step">
-                            <p>Chọn các file ảnh cần chuyển đổi (JPG, JPEG, PNG)</p>
+                            <p>Chọn các file ảnh cần chuyển đổi (JPG, JPEG, PNG, GIF, BMP, TIFF)</p>
                         </div>
                         <div class="step">
-                            <p>Nhấn nút "Chuyển đổi sang WebP" để bắt đầu quá trình chuyển đổi</p>
+                            <p>Nhấn nút "Chuyển đổi sang WebP THỰC SỰ" để bắt đầu quá trình</p>
                         </div>
                         <div class="step">
-                            <p>Tải xuống các file đã chuyển đổi khi hoàn thành</p>
+                            <p>Tải xuống file ZIP chứa ảnh WebP đã được xác minh và báo cáo chi tiết</p>
                         </div>
                     </div>
 
                     <form action="/convert-to-webp" method="post" enctype="multipart/form-data" id="convert-form">
                         <label for="image_files" class="file-input-label">
                                 <i class="bi bi-file-earmark-image fs-3"></i>
-                                <div class="mt-2">Tải lên hình ảnh cần chuyển đổi</div>
-                                <span>Chỉ chấp nhận file .jpg, .jpeg, .png, .webp</span>
-                                <input type="file" id="image_files" name="image_files" class="d-none" accept=".jpg,.jpeg,.png,.webp" multiple onchange="updateFileNameMultiple(this, 'image_files_name')">
+                                <div class="mt-2">Tải lên hình ảnh cần chuyển đổi sang WebP THỰC SỰ</div>
+                                <span>Chấp nhận: .jpg, .jpeg, .png, .gif, .bmp, .webp, .tiff, .tif</span>
+                                <input type="file" id="image_files" name="image_files" class="d-none" accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.tiff,.tif" multiple onchange="updateFileNameMultiple(this, 'image_files_name')">
                         </label>
                         <div id="image_files_name" class="mb-3 text-muted"></div>
-                        <button type="submit" class="btn btn-primary w-100">Chuyển đổi sang WebP</button>
+                        
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> <strong>Lưu ý:</strong> 
+                            <ul class="mb-0">
+                                <li>Chất lượng output: 90% (cân bằng giữa chất lượng và kích thước)</li>
+                                <li>Phương pháp nén: Tối ưu nhất (method 6)</li>
+                                <li>Hỗ trợ cả ảnh có nền trong suốt (RGBA)</li>
+                                <li>Mỗi file sẽ được kiểm tra kỹ lưỡng trước khi đóng gói</li>
+                            </ul>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-shield-check me-2"></i>Chuyển đổi sang WebP THỰC SỰ
+                        </button>
                     </form>
                 </div>
             </div>

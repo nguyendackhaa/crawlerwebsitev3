@@ -20,6 +20,7 @@ import concurrent.futures
 from app.baa_crawler import BaaProductCrawler
 from app.product_categorizer import ProductCategorizer
 from app.resize import ImageResizer
+from app.webp_converter import WebPConverter
 
 main_bp = Blueprint('main', __name__)
 
@@ -334,7 +335,7 @@ def view_image(image_path):
 
 @main_bp.route('/convert-to-webp', methods=['POST'])
 def convert_to_webp():
-    """Chuyển đổi ảnh từ JPG/PNG sang WebP"""
+    """Chuyển đổi ảnh từ JPG/PNG sang WebP THỰC SỰ"""
     try:
         if 'image_files' not in request.files:
             return render_template('index.html', error="Không tìm thấy file")
@@ -344,36 +345,54 @@ def convert_to_webp():
         if not files or files[0].filename == '':
             return render_template('index.html', error="Không có file nào được chọn")
         
+        # Import WebPConverter
+        from app.webp_converter import WebPConverter
+        
         # Kiểm tra các file có đúng định dạng không
+        allowed_formats = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tif']
         for file in files:
             filename = file.filename.lower()
-            if not (filename.endswith('.jpg') or filename.endswith('.jpeg') or filename.endswith('.png') or filename.endswith('.webp')):
-                return render_template('index.html', error="Chỉ chấp nhận file .jpg, .jpeg, .png, .webp")
+            if not any(filename.endswith(fmt) for fmt in allowed_formats):
+                return render_template('index.html', error=f"Chỉ chấp nhận file: {', '.join(allowed_formats)}")
         
         # Tạo thư mục đầu ra cho ảnh đã chuyển đổi
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         webp_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], f'webp_converted_{timestamp}')
+        temp_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], f'temp_{timestamp}')
         os.makedirs(webp_folder, exist_ok=True)
+        os.makedirs(temp_folder, exist_ok=True)
+        
         print(f"Đã tạo thư mục lưu ảnh webp: {webp_folder}")
         
         # Gửi thông báo bắt đầu
         socketio.emit('progress_update', {
             'percent': 5, 
-            'message': f'Bắt đầu chuyển đổi {len(files)} ảnh sang định dạng WebP'
+            'message': f'Bắt đầu chuyển đổi {len(files)} ảnh sang định dạng WebP THỰC SỰ',
+            'detail': 'Đang kiểm tra và xử lý từng file...'
         })
         
         # Biến lưu trữ kết quả chuyển đổi
         converted_files = []
         conversion_results = []
+        total_input_size = 0
+        total_output_size = 0
+        
+        # Lưu các file tạm thời trước
+        temp_files = []
+        for i, file in enumerate(files):
+            original_filename = secure_filename(file.filename)
+            temp_path = os.path.join(temp_folder, original_filename)
+            file.save(temp_path)
+            temp_files.append(temp_path)
         
         # Xử lý từng file
-        for i, file in enumerate(files):
+        for i, temp_path in enumerate(temp_files):
             # Tính phần trăm tiến trình
-            progress = int(5 + ((i / len(files)) * 90))
+            progress = int(5 + ((i / len(temp_files)) * 85))
             
             try:
-                # Tên file gốc và tên file webp
-                original_filename = secure_filename(file.filename)
+                # Lấy tên file gốc
+                original_filename = os.path.basename(temp_path)
                 base_name = os.path.splitext(original_filename)[0]
                 webp_filename = f"{base_name}.webp"
                 
@@ -383,45 +402,88 @@ def convert_to_webp():
                 # Cập nhật tiến trình
                 socketio.emit('progress_update', {
                     'percent': progress,
-                    'message': f'Đang xử lý ảnh {i+1}/{len(files)}: {original_filename}'
+                    'message': f'Đang xử lý ảnh {i+1}/{len(temp_files)}: {original_filename}',
+                    'detail': 'Chuyển đổi sang WebP với kiểm tra nghiêm ngặt...'
                 })
                 
-                # Đọc ảnh với Pillow
-                from PIL import Image
-                img = Image.open(file)
+                # Sử dụng WebPConverter để chuyển đổi
+                result = WebPConverter.convert_to_webp(
+                    input_path=temp_path,
+                    output_path=webp_path,
+                    quality=90,  # Chất lượng cao
+                    lossless=False,  # Nén có mất dữ liệu cho kích thước nhỏ hơn
+                    method=6  # Phương pháp nén tốt nhất (chậm hơn nhưng chất lượng cao)
+                )
                 
-                # Chuyển đổi sang mode RGB nếu cần
-                if img.mode in ('RGBA', 'P'):
-                    img = img.convert('RGB')
-                
-                # Lưu dưới dạng WebP với chất lượng cao
-                img.save(webp_path, 'WEBP', quality=90)
-                
-                # Lưu thông tin kết quả
-                converted_files.append(webp_path)
-                conversion_results.append({
-                    'original': original_filename,
-                    'converted': webp_filename,
-                    'path': webp_path,
-                    'status': 'success'
-                })
-                
-                print(f"Đã chuyển đổi thành công: {original_filename} -> {webp_filename}")
+                if result['success']:
+                    # Kiểm tra lại MIME type
+                    mime_type = WebPConverter.get_mime_type(webp_path)
+                    if mime_type != 'image/webp':
+                        raise Exception(f"MIME type không đúng: {mime_type}, cần là image/webp")
+                    
+                    converted_files.append(webp_path)
+                    conversion_results.append({
+                        'original': original_filename,
+                        'converted': webp_filename,
+                        'path': webp_path,
+                        'status': 'success',
+                        'input_size': result['input_size'],
+                        'output_size': result['output_size'],
+                        'compression_ratio': result['compression_ratio'],
+                        'webp_verified': result['webp_verified'],
+                        'webp_format': result['webp_info']['format'] if result['webp_info'] else 'N/A',
+                        'mime_type': mime_type
+                    })
+                    
+                    total_input_size += result['input_size']
+                    total_output_size += result['output_size']
+                    
+                    print(f"✓ Chuyển đổi thành công: {original_filename} -> {webp_filename}")
+                    print(f"  - WebP verified: {result['webp_verified']}")
+                    print(f"  - Format: {result['webp_info']['format'] if result['webp_info'] else 'N/A'}")
+                    print(f"  - MIME type: {mime_type}")
+                    print(f"  - Giảm {result['compression_ratio']}%")
+                else:
+                    raise Exception(result['error'] or 'Lỗi không xác định')
                 
             except Exception as e:
-                error_msg = f"Lỗi khi xử lý {file.filename}: {str(e)}"
-                print(error_msg)
+                error_msg = f"Lỗi khi xử lý {original_filename}: {str(e)}"
+                print(f"✗ {error_msg}")
                 conversion_results.append({
-                    'original': file.filename,
+                    'original': original_filename,
                     'status': 'error',
                     'error': str(e)
                 })
         
+        # Xóa thư mục tạm
+        try:
+            import shutil
+            shutil.rmtree(temp_folder)
+        except:
+            pass
+        
         # Gửi thông báo hoàn thành
         socketio.emit('progress_update', {
-            'percent': 95, 
-            'message': f'Đã chuyển đổi thành công {len(converted_files)}/{len(files)} ảnh. Đang tạo file ZIP...'
+            'percent': 90, 
+            'message': f'Đã chuyển đổi thành công {len(converted_files)}/{len(files)} ảnh. Đang tạo file ZIP...',
+            'detail': f'Tổng dung lượng giảm: {round((1 - total_output_size / total_input_size) * 100, 2)}%' if total_input_size > 0 else ''
         })
+        
+        # Tạo báo cáo Excel về kết quả chuyển đổi
+        report_path = os.path.join(webp_folder, 'conversion_report.xlsx')
+        try:
+            report_df = pd.DataFrame(conversion_results)
+            
+            # Sắp xếp các cột
+            if 'status' in report_df.columns and 'success' in report_df['status'].values:
+                success_df = report_df[report_df['status'] == 'success']
+                if not success_df.empty:
+                    report_df = pd.DataFrame(conversion_results)
+                    
+            report_df.to_excel(report_path, index=False)
+            print(f"Đã tạo báo cáo: {report_path}")
+        except Exception as e:
+            print(f"Lỗi khi tạo báo cáo: {str(e)}")
         
         # Tạo file ZIP để tải xuống
         zip_filename = f'webp_images_{timestamp}.zip'
@@ -434,16 +496,28 @@ def convert_to_webp():
             # Cập nhật hoàn thành
             socketio.emit('progress_update', {
                 'percent': 100, 
-                'message': f'Đã chuyển đổi và nén {len(converted_files)} ảnh thành công!'
+                'message': f'Đã chuyển đổi và nén {len(converted_files)} ảnh WebP THỰC SỰ thành công!',
+                'detail': 'Tất cả file đã được kiểm tra và xác nhận là WebP chuẩn.'
             })
             
-            # Thông báo thành công
-            success_message = f"Đã chuyển đổi thành công {len(converted_files)}/{len(files)} ảnh sang định dạng WebP."
+            # Thông báo thành công chi tiết
+            success_message = f"""
+            Đã chuyển đổi thành công {len(converted_files)}/{len(files)} ảnh sang định dạng WebP THỰC SỰ.
+            <br><br>
+            <strong>Thông tin chi tiết:</strong><br>
+            • Tổng dung lượng gốc: {round(total_input_size / 1024 / 1024, 2)} MB<br>
+            • Tổng dung lượng WebP: {round(total_output_size / 1024 / 1024, 2)} MB<br>
+            • Tiết kiệm: {round((1 - total_output_size / total_input_size) * 100, 2)}%<br>
+            • Tất cả file đã được xác minh là WebP chuẩn (RIFF/WEBP signature)
+            """
             
             # Tạo URL để tải xuống file zip
             download_url = url_for('main.download_file', filename=zip_filename)
             
-            return render_template('index.html', download_url=download_url, success_message=success_message)
+            return render_template('index.html', 
+                                 download_url=download_url, 
+                                 success_message=success_message,
+                                 active_tab='view-images-tab')
         else:
             return render_template('index.html', error="Không thể tạo file ZIP từ ảnh đã chuyển đổi")
     
