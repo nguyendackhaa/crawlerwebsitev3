@@ -14,6 +14,14 @@ def create_app():
     os.makedirs(downloads_dir, exist_ok=True)
     app.config['UPLOAD_FOLDER'] = downloads_dir
     
+    # Tạo thư mục categorized trong downloads
+    categorized_dir = os.path.join(downloads_dir, 'categorized')
+    os.makedirs(categorized_dir, exist_ok=True)
+    
+    # Tạo thư mục upscaled_images trong downloads để lưu ảnh đã xử lý bằng AI
+    upscaled_images_dir = os.path.join(downloads_dir, 'upscaled_images')
+    os.makedirs(upscaled_images_dir, exist_ok=True)
+    
     # Tạo thư mục logs nếu chưa tồn tại
     logs_dir = os.path.join(os.path.dirname(app.root_path), 'logs')
     os.makedirs(logs_dir, exist_ok=True)
