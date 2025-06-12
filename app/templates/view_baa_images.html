@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h4 class="mb-0">Ảnh sản phẩm BAA.vn</h4>
+        </div>
+        <div class="card-body">
+            <p class="lead">Thư mục: {{ folder }}</p>
+            
+            {% if images %}
+                <p class="text-muted">Hiển thị {{ images|length }} ảnh sản phẩm</p>
+                
+                <div class="row">
+                    {% for image in images %}
+                    <div class="col-md-3 mb-4">
+                        <div class="card h-100">
+                            <img src="{{ image.url }}" class="card-img-top" alt="{{ image.code }}">
+                            <div class="card-body">
+                                <h5 class="card-title">{{ image.code }}</h5>
+                                <a href="{{ image.url }}" class="btn btn-primary btn-sm" download>Tải xuống</a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="alert alert-info">
+                    Không có ảnh nào trong thư mục này
+                </div>
+            {% endif %}
+            
+            <div class="mt-3">
+                <a href="{{ url_for('main.index') }}" class="btn btn-secondary">Quay lại trang chủ</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
