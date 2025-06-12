@@ -130,6 +130,7 @@ class BaaProductCrawler:
             "urls_processed": 0,
             "products_found": 0,
             "products_processed": 0,
+            "products_skipped": 0,  # Sản phẩm bỏ qua vì không có giá
             "images_downloaded": 0,
             "categories": 0,
             "single_products": 0,
@@ -302,6 +303,7 @@ class BaaProductCrawler:
                 batch_start_time = time.time()
                 batch_success = 0
                 batch_failure = 0
+                batch_skipped = 0  # Số sản phẩm bỏ qua vì không có giá
                 
                 # Phần trăm tiến độ cho batch này
                 batch_percent_start = step_progress_base + 5
@@ -328,6 +330,9 @@ class BaaProductCrawler:
                         try:
                             info = future.result()
                             if info:
+                                # Kiểm tra xem sản phẩm có giá không để thống kê
+                                product_price = info.get('Giá', '').strip()
+                                
                                 # Chuẩn hóa thông số kỹ thuật
                                 info['Tổng quan'] = self._normalize_spec(info.get('Tổng quan', ''))
                                 products.append(info)
@@ -336,7 +341,14 @@ class BaaProductCrawler:
                                 if info.get('Mã sản phẩm') and info.get('URL'):
                                     code_url_map[info['Mã sản phẩm']] = info['URL']
                                 
-                                batch_success += 1
+                                if not product_price or product_price == '':
+                                    # Thống kê sản phẩm không có giá nhưng vẫn xử lý
+                                    batch_skipped += 1
+                                    stats["products_skipped"] += 1
+                                    print(f"[{cat_name}] Sản phẩm không có giá (vẫn lưu thông tin): {info.get('Tên sản phẩm', 'N/A')}")
+                                else:
+                                    batch_success += 1
+                                
                                 stats["products_processed"] += 1
                                 
                                 # Thêm vào hàng đợi thông tin sản phẩm
@@ -373,7 +385,7 @@ class BaaProductCrawler:
                             
                             socketio.emit('progress_update', {
                                 'percent': batch_progress, 
-                                'message': f'[{cat_name}] Đã xử lý {items_processed}/{len(product_urls)} sản phẩm ({batch_success} thành công, {batch_failure} lỗi)',
+                                'message': f'[{cat_name}] Đã xử lý {items_processed}/{len(product_urls)} sản phẩm ({batch_success} có giá, {batch_skipped} không có giá, {batch_failure} lỗi)',
                                 'detail': f'Tốc độ: {speed:.1f} sp/s{remaining_info}'
                             })
                 
@@ -382,6 +394,8 @@ class BaaProductCrawler:
                 
                 # Đặt code_url_map vào image_task_queue để tải ảnh
                 image_task_queue.put((code_url_map, anh_dir, cat_name, cat_idx, total_categories, step_progress_base + 40))
+                
+                print(f"[{cat_name}] Kết quả xử lý: {batch_success} sản phẩm có giá, {batch_skipped} sản phẩm không có giá, {batch_failure} lỗi")
                 
                 return products, code_url_map
             
@@ -478,6 +492,10 @@ class BaaProductCrawler:
                 'Giá trị': stats["products_processed"]
             },
             {
+                'Chỉ số': 'Số sản phẩm không có giá',
+                'Giá trị': stats["products_skipped"]
+            },
+            {
                 'Chỉ số': 'Số sản phẩm lỗi',
                 'Giá trị': stats["failed_products"]
             },
@@ -549,6 +567,7 @@ class BaaProductCrawler:
         print(f"Số sản phẩm đơn lẻ: {stats['single_products']}")
         print(f"Tổng sản phẩm tìm thấy: {stats['products_found']}")
         print(f"Sản phẩm xử lý thành công: {stats['products_processed']}")
+        print(f"Sản phẩm không có giá: {stats['products_skipped']}")
         print(f"Sản phẩm lỗi: {stats['failed_products']}")
         print(f"Ảnh tải thành công: {stats['images_downloaded']}")
         print(f"Ảnh tải thất bại: {stats['failed_images']}")
@@ -789,7 +808,7 @@ class BaaProductCrawler:
                             f.write(f"{datetime.now().strftime('%H:%M:%S')} - {retry_msg} - URL: {url}\n")
                         
                         # Thử tải ảnh
-                        result = download_baa_product_images_fixed([url], anh_dir)
+                        result = download_baa_product_images_fixed([url], anh_dir, create_report=False)
                         
                         if result and result.get('report_data'):
                             for r in result['report_data']:

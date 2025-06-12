@@ -3,7 +3,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from werkzeug.utils import secure_filename
 import tempfile
 import traceback
-from app.crawler import extract_category_links, scrape_product_info, is_product_url, get_product_info, download_autonics_images, download_autonics_jpg_images, download_product_documents, extract_product_urls, is_category_url, download_baa_product_images, download_baa_product_images_fixed, extract_product_price
+from app.crawler import extract_category_links, scrape_product_info, is_product_url, get_product_info, download_autonics_images, download_autonics_jpg_images, download_product_documents, extract_product_urls, is_category_url, download_baa_product_images, download_baa_product_images_fixed, extract_product_price, debug_extract_products_from_url
 import pandas as pd
 from openpyxl.utils import get_column_letter
 from datetime import datetime
@@ -3034,3 +3034,44 @@ def download_upscaled_image(filename):
     """
     upscaled_images_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], 'upscaled_images')
     return send_from_directory(upscaled_images_dir, filename, as_attachment=True)
+
+@main_bp.route('/debug-extract-products', methods=['POST'])
+def debug_extract_products():
+    """Route để debug việc trích xuất sản phẩm từ URL"""
+    try:
+        # Lấy URL từ request
+        data = request.get_json()
+        if not data or 'url' not in data:
+            return jsonify({'error': 'Thiếu URL trong request'}), 400
+        
+        url = data['url'].strip()
+        
+        if not url:
+            return jsonify({'error': 'URL không hợp lệ'}), 400
+        
+        # Import hàm debug
+        from app.crawler import debug_extract_products_from_url
+        
+        print(f"Debug extract products từ URL: {url}")
+        
+        # Gọi hàm debug
+        product_links = debug_extract_products_from_url(url)
+        
+        return jsonify({
+            'success': True,
+            'url': url,
+            'product_count': len(product_links),
+            'product_links': product_links[:20],  # Giới hạn 20 URL để tránh response quá lớn
+            'message': f'Tìm thấy {len(product_links)} URL sản phẩm'
+        })
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Lỗi debug extract products: {str(e)}")
+        print(error_details)
+        
+        return jsonify({
+            'error': f'Lỗi khi debug: {str(e)}',
+            'details': error_details
+        }), 500

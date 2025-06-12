@@ -980,6 +980,27 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
             <div class="tab-pane fade" id="baa-crawler" role="tabpanel" aria-labelledby="baa-crawler-tab">
                 <div class="form-container">
                     <h4 class="mb-3">Cào dữ liệu sản phẩm từ BAA.vn</h4>
+                    
+                    <!-- Thêm nút debug -->
+                    <div class="card mb-3">
+                        <div class="card-header bg-warning text-dark">
+                            <h5 class="mb-0">Debug - Kiểm tra URL</h5>
+                        </div>
+                        <div class="card-body">
+                            <p>Sử dụng để kiểm tra và debug việc trích xuất sản phẩm từ một URL cụ thể:</p>
+                            <div class="input-group mb-3">
+                                <input type="text" class="form-control" id="debug-url" placeholder="Nhập URL để debug..." value="https://baa.vn/vn/Category/thi-giac-may-3d-cognex_531_2603/">
+                                <button class="btn btn-warning" type="button" onclick="debugExtractProducts()">
+                                    <i class="bi bi-bug"></i> Debug URL
+                                </button>
+                            </div>
+                            <div id="debug-results" class="mt-3" style="display: none;">
+                                <h6>Kết quả debug:</h6>
+                                <pre id="debug-output" class="bg-light p-3" style="max-height: 300px; overflow-y: auto;"></pre>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <div class="card mt-3">
                         <div class="card-header bg-primary text-white">
                             <h5 class="mb-0">Cào dữ liệu BAA.vn</h5>
@@ -1222,6 +1243,50 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                 const bsTab = new bootstrap.Tab(tab);
                 bsTab.show();
             }
+        }
+        
+        // Hàm debug để kiểm tra việc trích xuất sản phẩm
+        function debugExtractProducts() {
+            const urlInput = document.getElementById('debug-url');
+            const debugResults = document.getElementById('debug-results');
+            const debugOutput = document.getElementById('debug-output');
+            
+            const url = urlInput.value.trim();
+            if (!url) {
+                alert('Vui lòng nhập URL để debug');
+                return;
+            }
+            
+            // Hiển thị loading
+            debugOutput.textContent = 'Đang xử lý debug...';
+            debugResults.style.display = 'block';
+            
+            // Gọi API debug
+            fetch('/debug-extract-products', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ url: url })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const output = `URL: ${data.url}
+Số sản phẩm tìm thấy: ${data.product_count}
+                    
+Danh sách URL sản phẩm (tối đa 20):
+${data.product_links.map((link, index) => `${index + 1}. ${link}`).join('\n')}
+
+Message: ${data.message}`;
+                    debugOutput.textContent = output;
+                } else {
+                    debugOutput.textContent = `Lỗi: ${data.error}\n\nChi tiết:\n${data.details || 'Không có chi tiết'}`;
+                }
+            })
+            .catch(error => {
+                debugOutput.textContent = `Lỗi kết nối: ${error.message}`;
+            });
         }
     </script>
 </body>

@@ -69,55 +69,119 @@ def is_product_url(url):
         return False
     
     # Loại bỏ các URL tin tức, thông tin, v.v. trước tiên
-    if '/tin-tuc/' in path or '/news/' in path or '/thong-tin/' in path or '/information/' in path:
-        return False
+    excluded_paths = ['/tin-tuc/', '/news/', '/thong-tin/', '/information/', '/category/', '/danh-muc/', '/page/', '/search/', '/tim-kiem/', '/about/', '/contact/', '/blog/', '/home/']
+    for excluded in excluded_paths:
+        if excluded in path:
+            return False
         
-    # Kiểm tra URL có chứa các phần tử của liên kết sản phẩm
-    if '/san-pham/' in path or '/product/' in path:
-            # Mẫu URL: baa.vn/vn/san-pham/bo-dieu-khien-nhiet-do-tuong-tu-autonics-tom-f3rj4c_61459
-            if '/san-pham/' in path:
-                # Kiểm tra có phải URL sản phẩm không dựa trên pattern thông thường
-                # 1. Kiểm tra pattern có _NUMBER ở cuối
-                if re.search(r'_\d+$', path.rstrip('/')):
+    # Pattern 1: URL có chứa /san-pham/
+    if '/san-pham/' in path:
+        # Mẫu URL: baa.vn/vn/san-pham/bo-dieu-khien-nhiet-do-tuong-tu-autonics-tom-f3rj4c_61459
+        if '/san-pham/' in path:
+            parts = path.split('/san-pham/')
+            if len(parts) > 1 and parts[1].strip():
+                # Kiểm tra phần sau /san-pham/ có chứa nội dung hợp lệ
+                product_part = parts[1].strip('/')
+                if product_part and len(product_part) > 3:  # Ít nhất 3 ký tự
+                    print(f"  ✓ URL sản phẩm hợp lệ (pattern /san-pham/): {url}")
                     return True
-                # 2. Kiểm tra pattern có tên model/mã sản phẩm ở cuối
-                parts = path.rstrip('/').split('/')
-                if len(parts) > 0 and re.search(r'[a-zA-Z0-9]+-[a-zA-Z0-9]+', parts[-1]):
-                    return True
+    
+    # Pattern 2: URL có chứa /product/
+    if '/product/' in path:
+        parts = path.split('/product/')
+        if len(parts) > 1 and parts[1].strip():
+            product_part = parts[1].strip('/')
+            if product_part and len(product_part) > 3:
+                print(f"  ✓ URL sản phẩm hợp lệ (pattern /product/): {url}")
+                return True
+    
+    # Pattern 3: URL dạng /vn/ten-san-pham_id (pattern đặc biệt của BAA.vn)
+    if re.search(r'/vn/[^/]+_\d+/?$', url, re.IGNORECASE):
+        # Kiểm tra thêm để đảm bảo không phải danh mục
+        if not any(category_keyword in path for category_keyword in ['/category/', '/danh-muc/', '/list/']):
+            print(f"  ✓ URL sản phẩm hợp lệ (pattern /vn/name_id): {url}")
             return True
     
+    # Pattern 4: URL có chứa mã sản phẩm dạng chữ-số_id ở cuối
+    if re.search(r'/[^/]+-[^/]+_\d+/?$', url, re.IGNORECASE):
+        print(f"  ✓ URL sản phẩm hợp lệ (pattern name-name_id): {url}")
+        return True
+    
+    # Pattern 5: URL có chứa từ khóa sản phẩm và có ID số ở cuối
+    product_keywords = ['san-pham', 'product', 'item', 'detail']
+    for keyword in product_keywords:
+        if keyword in path and re.search(r'_\d+/?$', url):
+            print(f"  ✓ URL sản phẩm hợp lệ (pattern keyword + _id): {url}")
+            return True
+    
+    # Pattern 6: URL BAA.vn với cấu trúc đặc biệt
+    # Ví dụ: https://baa.vn/vn/den-thap-led-sang-tinh-chop-nhay-d45mm-qlight-st45l-and-st45ml-series_4779/
+    if 'baa.vn' in parsed_url.netloc.lower():
+        # Kiểm tra URL có dạng /vn/ten-dai-co-dash_id/
+        if re.search(r'/vn/[a-zA-Z0-9\-]{10,}_\d+/?$', url, re.IGNORECASE):
+            print(f"  ✓ URL sản phẩm BAA.vn hợp lệ (long name pattern): {url}")
+            return True
+        
+        # Kiểm tra URL có chứa series hoặc model trong tên
+        if re.search(r'/vn/[^/]*(series|model|type)[^/]*_\d+/?$', url, re.IGNORECASE):
+            print(f"  ✓ URL sản phẩm BAA.vn hợp lệ (series/model pattern): {url}")
+            return True
+    
+    # Debug: Log URL không được nhận diện
+    print(f"  ✗ URL không được nhận diện là sản phẩm: {url}")
     return False
 
 def is_category_url(url):
     """
     Kiểm tra xem URL có phải là URL danh mục hay không
     """
+    # Phân tích URL
+    parsed_url = urlparse(url)
+    path = parsed_url.path.lower()
+    
+    # Loại bỏ các URL không phải BAA.vn
+    if 'baa.vn' not in parsed_url.netloc.lower():
+        return False
+    
     # Nhận diện các URL dạng /vn/ten-danh-muc_xxxx/ (trường hợp đặc biệt)
     if re.search(r'/vn/[^/]+_\d+/?$', url, re.IGNORECASE):
-        return True
+        # Kiểm tra thêm để đảm bảo không phải sản phẩm
+        if not any(product_keyword in path for product_keyword in ['/san-pham/', '/product/']):
+            print(f"  ✓ URL danh mục hợp lệ (pattern /vn/name_id): {url}")
+            return True
 
     # Xử lý riêng cho URL đèn tháp LED
     led_tower_url = "den-thap-led-sang-tinh-chop-nhay-d45mm-qlight-st45l-and-st45ml-series_4779"
     if led_tower_url in url:
-        print(f"Đã phát hiện URL đèn tháp LED: {url}")
+        print(f"  ✓ Đã phát hiện URL đèn tháp LED: {url}")
         return True
     
     # Các mẫu regex để phát hiện URL danh mục
     baa_category_patterns = [
-        r'/category/', 
-        r'/danh-muc/', 
-        r'baa\.vn.*\/vn\/[^/]+\/.*-page-\d+',
-        r'haiphongtech.+\/danh-muc'
+        r'/category/',               # URL có /category/
+        r'/danh-muc/',              # URL có /danh-muc/
+        r'/Category/',              # URL có /Category/ (viết hoa)
+        r'baa\.vn.*\/vn\/[^/]+\/.*-page-\d+',  # URL có phân trang
+        r'haiphongtech.+\/danh-muc', # URL haiphongtech với danh-muc
+        r'/vn/.*_\d+/?$'            # Pattern chung cho danh mục BAA.vn
     ]
     
     for pattern in baa_category_patterns:
         if re.search(pattern, url, re.IGNORECASE):
             # Kiểm tra thêm nếu là url từ BAA.vn
             if 'baa.vn' in url:
-                parts = url.split('/')
-                # Kiểm tra xem phần cuối của URL có phải dạng xyz-abc hay không
-                if len(parts) > 0 and re.search(r'[a-zA-Z0-9]+-[a-zA-Z0-9]+', parts[-1]):
+                # Đảm bảo không phải URL sản phẩm
+                if not any(product_keyword in path for product_keyword in ['/san-pham/', '/product/']):
+                    print(f"  ✓ URL danh mục hợp lệ (pattern match): {url}")
                     return True
+            else:
+                print(f"  ✓ URL danh mục hợp lệ (other site): {url}")
+                return True
+    
+    # Kiểm tra thêm các URL có thể là danh mục dựa trên query parameters
+    if 'page=' in url or '/page/' in url:
+        if 'baa.vn' in url and not any(product_keyword in path for product_keyword in ['/san-pham/', '/product/']):
+            print(f"  ✓ URL danh mục hợp lệ (có phân trang): {url}")
             return True
     
     return False
@@ -336,22 +400,7 @@ def extract_product_info(url, required_fields=None, index=1):
             else:
                 product_info['Mã sản phẩm'] = ''
             # Giá
-            price = ''
-            del_element = soup.select_one('del[data-root]')
-            if del_element:
-                price = del_element.text.strip()
-                # Lấy đơn vị tiền tệ
-                unit = ''
-                unit_span = del_element.find_next('span')
-                if unit_span:
-                    unit = unit_span.text.strip()
-                price = f"{price}{unit}"
-            else:
-                # Nếu không có del, lấy giá từ các span khác
-                price_span = soup.select_one('span.fw-bold.text-danger, span.product__price-print')
-                if price_span:
-                    price = price_span.text.strip()
-            product_info['Giá'] = clean_price(price)
+            product_info['Giá'] = extract_baa_product_price(soup, product_info.get('Tên sản phẩm', ''))
             # Thông số kỹ thuật
             spec_html = ''
             spec_table = soup.select_one('table.feature__metadata--tab.active')
@@ -726,68 +775,134 @@ def extract_product_urls(url):
                 return [], []
                 
             soup = BeautifulSoup(html, 'html.parser')
-            # Lấy các link sản phẩm thực sự (ưu tiên selector chuẩn của BAA.vn)
-            for a in soup.select('a[href*="/san-pham/"]'):
-                href = a.get('href')
-                if href:
-                    if not href.startswith('http'):
-                        parsed_url = urlparse(page_url)
-                        full_url = f"{parsed_url.scheme}://{parsed_url.netloc}{href}" if href.startswith('/') else f"{page_url.rstrip('/')}/{href}"
-                    else:
-                        full_url = href
-                    # Chỉ thêm nếu là URL sản phẩm thực sự
-                    if is_product_url(full_url) and full_url not in local_product_urls:
-                        local_product_urls.append(full_url)
             
-            # Xử lý phân trang
-            for page_link in soup.select('a[href*="/page/"]'):
-                page_url = page_link.get('href')
-                if page_url:
-                    if not page_url.startswith('http'):
-                        parsed_url = urlparse(page_url)
-                        page_url = f"{parsed_url.scheme}://{parsed_url.netloc}{page_url}" if page_url.startswith('/') else f"{page_url.rstrip('/')}/{page_url}"
-                    if page_url not in processed_pages:
-                        next_pages.append(page_url)
+            # Debug: In ra một số thông tin về trang
+            print(f"  > Đã tải HTML, kích thước: {len(html)} ký tự")
+            
+            # Lấy các link sản phẩm với nhiều selector khác nhau
+            product_selectors = [
+                'a[href*="/san-pham/"]',  # Selector cũ
+                'a[href*="/product/"]',   # Có thể dùng product thay vì san-pham
+                '.product-item a',        # Link trong product item
+                '.product-card a',        # Link trong product card
+                '.product-list a',        # Link trong product list
+                'a.product-link',         # Class product-link
+                'a.product-item-link',    # Class product-item-link
+                '.col-product a'          # Link trong column product
+            ]
+            
+            total_links_found = 0
+            
+            for selector in product_selectors:
+                links = soup.select(selector)
+                print(f"  > Selector '{selector}' tìm thấy {len(links)} link")
+                
+                for a in links:
+                    href = a.get('href')
+                    if href:
+                        # Tạo URL đầy đủ
+                        if not href.startswith('http'):
+                            parsed_url = urlparse(page_url)
+                            full_url = f"{parsed_url.scheme}://{parsed_url.netloc}{href}" if href.startswith('/') else f"{page_url.rstrip('/')}/{href}"
+                        else:
+                            full_url = href
+                        
+                        # Kiểm tra xem có phải URL sản phẩm hợp lệ không
+                        if is_product_url(full_url) and full_url not in local_product_urls:
+                            local_product_urls.append(full_url)
+                            total_links_found += 1
+                            print(f"    + Tìm thấy URL sản phẩm: {full_url}")
+            
+            # Nếu không tìm được sản phẩm với selector cũ, thử tìm với pattern URL đặc biệt của BAA.vn
+            if total_links_found == 0:
+                print(f"  > Không tìm được sản phẩm với selector cũ, thử pattern BAA.vn...")
+                
+                # Tìm tất cả link và kiểm tra pattern
+                all_links = soup.select('a[href]')
+                print(f"  > Tìm thấy {len(all_links)} link để kiểm tra pattern")
+                
+                for a in all_links:
+                    href = a.get('href')
+                    if href:
+                        # Tạo URL đầy đủ
+                        if not href.startswith('http'):
+                            parsed_url = urlparse(page_url)
+                            full_url = f"{parsed_url.scheme}://{parsed_url.netloc}{href}" if href.startswith('/') else f"{page_url.rstrip('/')}/{href}"
+                        else:
+                            full_url = href
+                        
+                        # Kiểm tra pattern đặc biệt của BAA.vn
+                        if _is_baa_product_url(full_url) and full_url not in local_product_urls:
+                            local_product_urls.append(full_url)
+                            total_links_found += 1
+                            print(f"    + Tìm thấy URL sản phẩm BAA pattern: {full_url}")
+            
+            print(f"  > Tổng cộng tìm thấy {total_links_found} URL sản phẩm hợp lệ")
+            
+            # Xử lý phân trang với nhiều selector
+            pagination_selectors = [
+                'a[href*="/page/"]',      # Selector cũ
+                'a[href*="page="]',       # Query parameter page
+                '.pagination a',          # Link trong pagination
+                '.page-list a',           # Link trong page list
+                'nav a[href*="page"]'     # Navigation với page
+            ]
+            
+            for selector in pagination_selectors:
+                page_links = soup.select(selector)
+                print(f"  > Pagination selector '{selector}' tìm thấy {len(page_links)} link")
+                
+                for page_link in page_links:
+                    page_href = page_link.get('href')
+                    if page_href:
+                        if not page_href.startswith('http'):
+                            parsed_url = urlparse(page_url)
+                            full_page_url = f"{parsed_url.scheme}://{parsed_url.netloc}{page_href}" if page_href.startswith('/') else f"{page_url.rstrip('/')}/{page_href}"
+                        else:
+                            full_page_url = page_href
+                        
+                        if full_page_url not in processed_pages and full_page_url not in next_pages:
+                            next_pages.append(full_page_url)
+                            print(f"    + Tìm thấy trang phân trang: {full_page_url}")
             
             return local_product_urls, next_pages
         except Exception as e:
             print(f"Lỗi khi xử lý trang {page_url}: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return [], []
     
     # Số luồng tối đa
     max_workers = 10
     
-    # Sử dụng ThreadPoolExecutor để xử lý đa luồng
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        while pages_to_process:
-            # Lấy một batch các trang để xử lý
-            current_batch = pages_to_process[:max_workers]
-            pages_to_process = pages_to_process[max_workers:]
+    while pages_to_process:
+        current_batch = pages_to_process[:max_workers]
+        pages_to_process = pages_to_process[max_workers:]
+        
+        # Xử lý theo batch để tránh quá tải
+        with ThreadPoolExecutor(max_workers=min(max_workers, len(current_batch))) as executor:
+            futures = [executor.submit(process_page, page_url) for page_url in current_batch]
             
-            # Đánh dấu các trang đang xử lý
-            for page in current_batch:
-                processed_pages.add(page)
-            
-            # Tạo các futures cho batch hiện tại
-            future_to_url = {executor.submit(process_page, page): page for page in current_batch}
-            
-            # Xử lý kết quả khi hoàn thành
-            for future in as_completed(future_to_url):
-                page_url = future_to_url[future]
+            for future in as_completed(futures):
                 try:
-                    local_urls, next_pages = future.result()
+                    page_products, page_pagination = future.result()
                     
-                    # Thêm các URL sản phẩm vào danh sách kết quả
-                    for product_url in local_urls:
-                        if product_url not in product_urls:
-                            product_urls.append(product_url)
+                    # Thêm sản phẩm vào danh sách
+                    for prod_url in page_products:
+                        if prod_url not in product_urls:
+                            product_urls.append(prod_url)
                     
-                    # Thêm các trang tiếp theo vào danh sách cần xử lý
-                    for next_page in next_pages:
-                        if next_page not in processed_pages and next_page not in pages_to_process:
-                            pages_to_process.append(next_page)
+                    # Thêm trang phân trang vào danh sách cần xử lý
+                    for page_url in page_pagination:
+                        if page_url not in processed_pages and page_url not in pages_to_process:
+                            pages_to_process.append(page_url)
+                            
                 except Exception as e:
-                    print(f"Lỗi khi xử lý kết quả cho trang {page_url}: {str(e)}")
+                    print(f"Lỗi khi xử lý future: {str(e)}")
+        
+        # Đánh dấu các trang đã xử lý
+        for page_url in current_batch:
+            processed_pages.add(page_url)
     
     print(f"Đã xử lý {len(processed_pages)} trang, tìm thấy {len(product_urls)} URL sản phẩm")
     return product_urls
@@ -2732,7 +2847,7 @@ def resize_image_to_square(image, size=800):
     
     return square_img
 
-def download_baa_product_images_fixed(product_urls, output_folder=None):
+def download_baa_product_images_fixed(product_urls, output_folder=None, create_report=True):
     try:
         # Chuyển đổi input thành list nếu nhận được string
         if isinstance(product_urls, str):
@@ -2763,7 +2878,8 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
         
         # Hàm xử lý cho mỗi URL sản phẩm
         def process_product_url(url, i):
-            print(f"\n[{i}/{len(product_urls)}] Đang xử lý URL: {url}")
+            if len(product_urls) > 1:  # Chỉ in tiến độ khi có nhiều hơn 1 URL
+                print(f"\n[{i}/{len(product_urls)}] Đang xử lý URL: {url}")
             
             # Khởi tạo dữ liệu báo cáo cho URL này
             report_item = {
@@ -2793,28 +2909,28 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                 product_symbol = soup.select_one('span.product__symbol__value')
                 if product_symbol and product_symbol.text.strip():
                     product_code = product_symbol.text.strip()
-                    print(f"  ✓ Tìm thấy mã sản phẩm từ span.product__symbol__value: {product_code}")
+                    if len(product_urls) == 1:  # Chỉ in chi tiết khi xử lý 1 URL
+                        print(f"  ✓ Tìm thấy mã sản phẩm từ span.product__symbol__value: {product_code}")
                 
                 # Ưu tiên sử dụng mã sản phẩm từ HTML
                 if product_code:
                     original_product_code = product_code
-                    print(f"  ✓ Sử dụng mã sản phẩm từ HTML: {product_code}")
+                    if len(product_urls) == 1:
+                        print(f"  ✓ Sử dụng mã sản phẩm từ HTML: {product_code}")
                 else:
                     # Nếu không tìm được mã từ HTML, thử trích xuất từ URL
                     product_code = extract_product_code_from_url(url)
                     original_product_code = product_code
-                    print(f"  ✓ Sử dụng mã sản phẩm từ URL: {product_code}")
+                    if len(product_urls) == 1:
+                        print(f"  ✓ Sử dụng mã sản phẩm từ URL: {product_code}")
                 
                 # Chuẩn hóa mã sản phẩm cho tên file - thay thế các ký tự đặc biệt
                 if product_code:
                     # Lưu lại mã sản phẩm gốc cho báo cáo
                     report_product_code = product_code
                     # Chuẩn hóa mã sản phẩm để sử dụng làm tên file
-                    product_code = standardize_product_code(product_code)
-                    # Thay thế các ký tự không hợp lệ cho tên file
-                    product_code = product_code.replace('/', '-').replace('\\', '-').replace(':', '-')
-                    product_code = product_code.replace('*', '-').replace('?', '-').replace('"', '-')
-                    product_code = product_code.replace('<', '-').replace('>', '-').replace('|', '-')
+                    from app.utils import standardize_filename
+                    product_code = standardize_filename(product_code)
                 else:
                     report_product_code = f"unknown_product_{i}"
                     product_code = f"unknown_product_{i}"
@@ -2835,7 +2951,8 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                                 # Đảm bảo là ảnh kích thước 800
                                 if '800' in src:
                                     img_url = src
-                                    print(f"  ✓ Tìm thấy ảnh 800px từ modal-body-image.active: {img_url}")
+                                    if len(product_urls) == 1:
+                                        print(f"  ✓ Tìm thấy ảnh 800px từ modal-body-image.active: {img_url}")
                                     break
                                 else:
                                     # Nếu không có kích thước 800, thử chuyển đổi
@@ -2845,7 +2962,8 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                                         type_folder = match.group(1)  # series hoặc model
                                         folder_id = match.group(2)    # ID thư mục (ví dụ: 274)
                                         img_url = re.sub(pattern, f'/{type_folder}/{folder_id}/800/', src)
-                                        print(f"  ✓ Chuyển đổi ảnh từ modal-body-image.active sang kích thước 800px: {img_url}")
+                                        if len(product_urls) == 1:
+                                            print(f"  ✓ Chuyển đổi ảnh từ modal-body-image.active sang kích thước 800px: {img_url}")
                                         break
                 
                 # PHƯƠNG PHÁP 2: Tìm trong div.modal-body__view-image
@@ -2858,7 +2976,8 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                                 # Ưu tiên ảnh 800px
                                 if '800' in src:
                                     img_url = src
-                                    print(f"  ✓ Tìm thấy ảnh 800px từ div.modal-body__view-image: {img_url}")
+                                    if len(product_urls) == 1:
+                                        print(f"  ✓ Tìm thấy ảnh 800px từ div.modal-body__view-image: {img_url}")
                                     break
                                 else:
                                     # Nếu không có kích thước 800, thử chuyển đổi
@@ -2868,7 +2987,8 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                                         type_folder = match.group(1)  # series hoặc model
                                         folder_id = match.group(2)    # ID thư mục (ví dụ: 274)
                                         img_url = re.sub(pattern, f'/{type_folder}/{folder_id}/800/', src)
-                                        print(f"  ✓ Chuyển đổi ảnh từ div.modal-body__view-image sang kích thước 800px: {img_url}")
+                                        if len(product_urls) == 1:
+                                            print(f"  ✓ Chuyển đổi ảnh từ div.modal-body__view-image sang kích thước 800px: {img_url}")
                                         break
                 
                 # PHƯƠNG PHÁP 3: Nếu không tìm thấy, lấy từ img.btn-image-view-360 và chuyển sang 800
@@ -2884,10 +3004,12 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                                 type_folder = match.group(1)  # series hoặc model
                                 folder_id = match.group(2)    # ID thư mục (ví dụ: 274)
                                 img_url = re.sub(pattern, f'/{type_folder}/{folder_id}/800/', src)
-                                print(f"  ✓ Chuyển đổi ảnh từ img.btn-image-view-360 sang kích thước 800px: {img_url}")
+                                if len(product_urls) == 1:
+                                    print(f"  ✓ Chuyển đổi ảnh từ img.btn-image-view-360 sang kích thước 800px: {img_url}")
                             else:
                                 img_url = src
-                                print(f"  ✓ Tìm thấy ảnh từ img.btn-image-view-360: {img_url}")
+                                if len(product_urls) == 1:
+                                    print(f"  ✓ Tìm thấy ảnh từ img.btn-image-view-360: {img_url}")
                 
                 # PHƯƠNG PHÁP 4: Nếu vẫn không tìm thấy, thử og:image
                 if not img_url:
@@ -2902,9 +3024,11 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                                 type_folder = match.group(1)  # series hoặc model
                                 folder_id = match.group(2)    # ID thư mục (ví dụ: 274)
                                 img_url = re.sub(pattern, f'/{type_folder}/{folder_id}/800/', img_url)
-                                print(f"  ✓ Chuyển đổi ảnh từ og:image sang kích thước 800px: {img_url}")
+                                if len(product_urls) == 1:
+                                    print(f"  ✓ Chuyển đổi ảnh từ og:image sang kích thước 800px: {img_url}")
                             else:
-                                print(f"  ✓ Tìm thấy ảnh từ og:image: {img_url}")
+                                if len(product_urls) == 1:
+                                    print(f"  ✓ Tìm thấy ảnh từ og:image: {img_url}")
                 
                 # Nếu không tìm thấy ảnh nào, thông báo thất bại
                 if not img_url:
@@ -2913,7 +3037,8 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                     report_item['Lý do lỗi'] = 'Không tìm thấy ảnh sản phẩm'
                     with result_lock:
                         results['report_data'].append(report_item)
-                    print(f"  ✗ Không tìm thấy ảnh cho URL: {url}")
+                    if len(product_urls) == 1:
+                        print(f"  ✗ Không tìm thấy ảnh cho URL: {url}")
                     return report_item
                 
                 # Chuẩn hóa URL ảnh
@@ -2925,7 +3050,8 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                 elif not img_url.startswith(('http://', 'https://')):
                     img_url = urljoin(base_url, img_url)
                 
-                print(f"  → Lưu ảnh vào thư mục: {output_folder}")
+                if len(product_urls) == 1:
+                    print(f"  → Lưu ảnh vào thư mục: {output_folder}")
                 
                 # Thử tải ảnh - giữ nguyên định dạng ảnh
                 try:
@@ -2933,20 +3059,24 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                     img_filename = f"{product_code}.webp"
                     img_path = os.path.join(output_folder, img_filename)
                     
-                    print(f"  → Đang tải ảnh: {img_url}")
+                    if len(product_urls) == 1:
+                        print(f"  → Đang tải ảnh: {img_url}")
                     
                     # Tải ảnh
-                    img_response = requests.get(img_url, headers=headers, timeout=20)
+                    img_response = requests.get(img_url, headers=headers, timeout=15)
                     img_response.raise_for_status()
                     
-                    # Kiểm tra MIME type để đảm bảo đây là ảnh
+                    # Kiểm tra MIME type
                     content_type = img_response.headers.get('Content-Type', '')
                     if not content_type.startswith('image/'):
                         raise ValueError(f"Không phải file ảnh: {content_type}")
                     
                     # Xử lý ảnh
                     img = Image.open(BytesIO(img_response.content))
-                    img = img.convert("RGB")  # Đảm bảo chế độ màu tương thích
+                    img = img.convert("RGB")
+                    
+                    # Resize ảnh về kích thước vuông 800x800
+                    img = resize_image_to_square(img, 800)
                     
                     # Lưu thông tin kích thước ảnh
                     img_size = f"{img.width}x{img.height}"
@@ -2962,16 +3092,17 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                     report_item['Đường dẫn ảnh'] = img_path
                     report_item['Kích thước ảnh'] = img_size
                     
-                    print(f"  ✓ Đã lưu: {img_filename} ({img_size})")
-                    
+                    if len(product_urls) == 1:
+                        print(f"  ✓ Đã lưu: {img_filename} ({img_size})")
+                        
                 except requests.exceptions.HTTPError as e:
-                    print(f"  ✗ Lỗi HTTP khi tải ảnh: {str(e)}")
-                    # Thử lại với ảnh 300px nếu 800px không tồn tại
+                    # Nếu lỗi 404 với ảnh 800px, thử với 300px
                     if '404' in str(e) and '800' in img_url:
                         try:
                             # Thử lại với kích thước 300px
                             img_url_300 = re.sub(r'/800/', '/300/', img_url)
-                            print(f"  → Thử lại với ảnh kích thước 300px: {img_url_300}")
+                            if len(product_urls) == 1:
+                                print(f"  → Thử lại với ảnh kích thước 300px: {img_url_300}")
                             
                             # Tải ảnh kích thước 300px
                             img_response = requests.get(img_url_300, headers=headers, timeout=15)
@@ -3000,7 +3131,8 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                             report_item['Đường dẫn ảnh'] = img_path
                             report_item['Kích thước ảnh'] = img_size
                             
-                            print(f"  ✓ Đã lưu ảnh kích thước 300px: {img_filename} ({img_size})")
+                            if len(product_urls) == 1:
+                                print(f"  ✓ Đã lưu ảnh kích thước 300px: {img_filename} ({img_size})")
                         except Exception as inner_e:
                             with result_lock:
                                 results['failed'] += 1
@@ -3011,7 +3143,8 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                         report_item['Lý do lỗi'] = f"Lỗi HTTP: {str(e)}"
                 
                 except Exception as e:
-                    print(f"  ✗ Lỗi khi tải ảnh: {str(e)}")
+                    if len(product_urls) == 1:
+                        print(f"  ✗ Lỗi khi tải ảnh: {str(e)}")
                     with result_lock:
                         results['failed'] += 1
                     report_item['Lý do lỗi'] = f"Lỗi khi tải ảnh: {str(e)}"
@@ -3031,8 +3164,9 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                 report_item['Lý do lỗi'] = f"Lỗi: {str(e)}"
                 with result_lock:
                     results['report_data'].append(report_item)
-                print(f"Lỗi khi xử lý URL {url}: {str(e)}")
-                traceback.print_exc()
+                if len(product_urls) == 1:
+                    print(f"Lỗi khi xử lý URL {url}: {str(e)}")
+                    traceback.print_exc()
                 return report_item
         
         # Xử lý đa luồng
@@ -3047,74 +3181,73 @@ def download_baa_product_images_fixed(product_urls, output_folder=None):
                 except Exception as e:
                     print(f"Lỗi không xử lý được: {str(e)}")
         
-        # Tạo báo cáo Excel
-        try:
-            print("\nĐang tạo báo cáo Excel...")
-            
-            # Tạo DataFrame từ dữ liệu báo cáo
-            df = pd.DataFrame(results['report_data'])
-            
-            # Tạo đường dẫn file báo cáo
-            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-            report_filename = f"baa_image_report_{timestamp}.xlsx"
-            report_path = os.path.join(output_folder, report_filename)
-            
-            # Lưu vào file Excel
-            df.to_excel(report_path, index=False, sheet_name='Báo cáo tải ảnh')
-            
-            # Mở workbook để định dạng
-            workbook = openpyxl.load_workbook(report_path)
-            sheet = workbook.active
-            
-            # Định dạng các cột
-            for idx, col in enumerate(df.columns, 1):
-                # Đặt độ rộng cột
-                column_letter = openpyxl.utils.get_column_letter(idx)
-                if col == 'URL' or col == 'Đường dẫn ảnh':
-                    sheet.column_dimensions[column_letter].width = 50
-                elif col == 'Lý do lỗi':
-                    sheet.column_dimensions[column_letter].width = 30
-                else:
-                    sheet.column_dimensions[column_letter].width = 20
+        # Tạo báo cáo Excel chỉ khi được yêu cầu
+        if create_report and len(product_urls) > 1:  # Chỉ tạo báo cáo khi xử lý nhiều URL
+            try:
+                print("\nĐang tạo báo cáo Excel...")
+                
+                # Tạo DataFrame từ dữ liệu báo cáo
+                df = pd.DataFrame(results['report_data'])
+                
+                # Tạo đường dẫn file báo cáo
+                timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                report_filename = f"baa_image_report_{timestamp}.xlsx"
+                report_path = os.path.join(output_folder, report_filename)
+                
+                # Lưu vào file Excel một cách an toàn
+                with pd.ExcelWriter(report_path, engine='openpyxl') as writer:
+                    df.to_excel(writer, index=False, sheet_name='Báo cáo tải ảnh')
                     
-                # Định dạng tiêu đề
-                header_cell = sheet.cell(row=1, column=idx)
-                header_cell.font = openpyxl.styles.Font(bold=True)
-                header_cell.alignment = openpyxl.styles.Alignment(horizontal='center')
-            
-            # Tạo bảng tóm tắt
-            summary_row = sheet.max_row + 3
-            sheet.cell(row=summary_row, column=1).value = "Tổng số URL:"
-            sheet.cell(row=summary_row, column=2).value = results['total']
-            
-            sheet.cell(row=summary_row+1, column=1).value = "Tải thành công:"
-            sheet.cell(row=summary_row+1, column=2).value = results['success']
-            
-            sheet.cell(row=summary_row+2, column=1).value = "Tải thất bại:"
-            sheet.cell(row=summary_row+2, column=2).value = results['failed']
-            
-            sheet.cell(row=summary_row+3, column=1).value = "Tổng số ảnh đã tải:"
-            sheet.cell(row=summary_row+3, column=2).value = len(results['image_paths'])
-            
-            # Đặt độ rộng cho cột
-            sheet.column_dimensions['A'].width = 20
-            sheet.column_dimensions['B'].width = 10
-            
-            # In đậm tiêu đề tóm tắt
-            for i in range(4):
-                cell = sheet.cell(row=summary_row+i, column=1)
-                cell.font = openpyxl.styles.Font(bold=True)
-            
-            # Lưu lại workbook
-            workbook.save(report_path)
-            
-            # Thêm đường dẫn file báo cáo vào kết quả
-            results['report_file'] = report_path
-            print(f"Đã tạo báo cáo Excel: {report_path}")
-            
-        except Exception as e:
-            print(f"Lỗi khi tạo báo cáo Excel: {str(e)}")
-            traceback.print_exc()
+                    # Lấy workbook và worksheet
+                    workbook = writer.book
+                    sheet = writer.sheets['Báo cáo tải ảnh']
+                    
+                    # Định dạng các cột
+                    for idx, col in enumerate(df.columns, 1):
+                        # Đặt độ rộng cột
+                        column_letter = openpyxl.utils.get_column_letter(idx)
+                        if col == 'URL' or col == 'Đường dẫn ảnh':
+                            sheet.column_dimensions[column_letter].width = 50
+                        elif col == 'Lý do lỗi':
+                            sheet.column_dimensions[column_letter].width = 30
+                        else:
+                            sheet.column_dimensions[column_letter].width = 20
+                            
+                        # Định dạng tiêu đề
+                        header_cell = sheet.cell(row=1, column=idx)
+                        header_cell.font = openpyxl.styles.Font(bold=True)
+                        header_cell.alignment = openpyxl.styles.Alignment(horizontal='center')
+                    
+                    # Tạo bảng tóm tắt
+                    summary_row = sheet.max_row + 3
+                    sheet.cell(row=summary_row, column=1).value = "Tổng số URL:"
+                    sheet.cell(row=summary_row, column=2).value = results['total']
+                    
+                    sheet.cell(row=summary_row+1, column=1).value = "Tải thành công:"
+                    sheet.cell(row=summary_row+1, column=2).value = results['success']
+                    
+                    sheet.cell(row=summary_row+2, column=1).value = "Tải thất bại:"
+                    sheet.cell(row=summary_row+2, column=2).value = results['failed']
+                    
+                    sheet.cell(row=summary_row+3, column=1).value = "Tổng số ảnh đã tải:"
+                    sheet.cell(row=summary_row+3, column=2).value = len(results['image_paths'])
+                    
+                    # Đặt độ rộng cho cột
+                    sheet.column_dimensions['A'].width = 20
+                    sheet.column_dimensions['B'].width = 10
+                    
+                    # In đậm tiêu đề tóm tắt
+                    for i in range(4):
+                        cell = sheet.cell(row=summary_row+i, column=1)
+                        cell.font = openpyxl.styles.Font(bold=True)
+                
+                # Thêm đường dẫn file báo cáo vào kết quả
+                results['report_file'] = report_path
+                print(f"Đã tạo báo cáo Excel: {report_path}")
+                
+            except Exception as e:
+                print(f"Lỗi khi tạo báo cáo Excel: {str(e)}")
+                traceback.print_exc()
         
         # Trả về kết quả
         return results
@@ -3586,3 +3719,354 @@ def extract_product_documents(product_url_or_code):
 
 # Khởi tạo cache cho hàm
 extract_product_documents.cache = {}
+
+def debug_extract_products_from_url(url):
+    """
+    Hàm debug để kiểm tra cấu trúc HTML và trích xuất sản phẩm
+    """
+    print(f"\n=== DEBUG: Phân tích URL {url} ===")
+    
+    # Kiểm tra loại URL
+    if is_category_url(url):
+        print("✓ Được nhận diện là URL danh mục")
+    elif is_product_url(url):
+        print("✓ Được nhận diện là URL sản phẩm")
+    else:
+        print("✗ Không được nhận diện là URL hợp lệ")
+        return []
+    
+    # Tải HTML
+    html = get_html_content(url)
+    if not html:
+        print("✗ Không thể tải HTML")
+        return []
+    
+    print(f"✓ Đã tải HTML, kích thước: {len(html)} ký tự")
+    
+    # Parse HTML
+    soup = BeautifulSoup(html, 'html.parser')
+    
+    # Debug: Hiển thị title của trang
+    title = soup.select_one('title')
+    if title:
+        print(f"✓ Title trang: {title.get_text(strip=True)}")
+    
+    # Debug: Kiểm tra các class và ID chính
+    print("\n--- PHÂN TÍCH CẤU TRÚC HTML ---")
+    
+    # Tìm các div chính có thể chứa sản phẩm
+    main_containers = soup.select('div[class*="product"], div[class*="item"], div[class*="card"], .row, .container')
+    print(f"Tìm thấy {len(main_containers)} container có thể chứa sản phẩm")
+    
+    # Debug: Hiển thị một số class phổ biến
+    common_classes = set()
+    for element in soup.select('[class]')[:100]:  # Chỉ lấy 100 element đầu
+        for cls in element.get('class', []):
+            if any(keyword in cls.lower() for keyword in ['product', 'item', 'card', 'list', 'grid']):
+                common_classes.add(cls)
+    
+    if common_classes:
+        print(f"Các class phổ biến liên quan: {', '.join(sorted(common_classes)[:10])}")
+    
+    # Thử các selector khác nhau
+    selectors_to_try = [
+        ('a[href*="/san-pham/"]', 'Link có /san-pham/'),
+        ('a[href*="/product/"]', 'Link có /product/'),
+        ('a[href*="/vn/"]', 'Link có /vn/ (BAA pattern)'),
+        ('.product-item a', 'Link trong .product-item'),
+        ('.product-card a', 'Link trong .product-card'),
+        ('.product-list a', 'Link trong .product-list'),
+        ('a.product-link', 'Link với class .product-link'),
+        ('a.product-item-link', 'Link với class .product-item-link'),
+        ('.col-product a', 'Link trong .col-product'),
+        ('.card.product__card', 'Card sản phẩm BAA'),
+        ('a.card', 'Link card chung'),
+        ('.row a', 'Link trong row'),
+        ('a[href*="_"]', 'Link có chứa dấu gạch dưới'),
+        ('.col-md-3 a', 'Link trong col-md-3'),
+        ('.col-lg-3 a', 'Link trong col-lg-3'),
+        ('.col-sm-6 a', 'Link trong col-sm-6'),
+        ('div[class*="product"] a', 'Link trong div có class product'),
+        ('div[class*="item"] a', 'Link trong div có class item'),
+        ('.d-block a', 'Link trong .d-block'),
+        ('a[title]', 'Link có attribute title'),
+        ('img[alt]', 'Ảnh có alt (kiểm tra parent link)'),
+        ('.grid-item a', 'Link trong .grid-item'),
+        ('.list-item a', 'Link trong .list-item')
+    ]
+    
+    all_found_links = []
+    product_links = []
+    
+    for selector, description in selectors_to_try:
+        elements = soup.select(selector)
+        print(f"\n--- {description} ({selector}) ---")
+        print(f"Tìm thấy {len(elements)} phần tử")
+        
+        # Xử lý đặc biệt cho img[alt]
+        if selector == 'img[alt]':
+            for img in elements:
+                parent_a = img.find_parent('a')
+                if parent_a and parent_a.get('href'):
+                    href = parent_a.get('href')
+                    alt_text = img.get('alt', '')[:50]
+                    
+                    if href:
+                        # Tạo URL đầy đủ
+                        if not href.startswith('http'):
+                            parsed_url = urlparse(url)
+                            full_url = f"{parsed_url.scheme}://{parsed_url.netloc}{href}" if href.startswith('/') else f"{url.rstrip('/')}/{href}"
+                        else:
+                            full_url = href
+                        
+                        all_found_links.append(full_url)
+                        is_product = is_product_url(full_url)
+                        if is_product:
+                            product_links.append(full_url)
+                        
+                        print(f"  [IMG] {full_url[:80]}{'...' if len(full_url) > 80 else ''}")
+                        print(f"        Alt: {alt_text}")
+                        print(f"        Is Product: {'✓' if is_product else '✗'}")
+        else:
+            for i, element in enumerate(elements[:5]):  # Chỉ hiển thị 5 phần tử đầu
+                href = element.get('href', '')
+                text = element.get_text(strip=True)[:50]  # Giới hạn text
+                
+                if href:
+                    # Tạo URL đầy đủ
+                    if not href.startswith('http'):
+                        parsed_url = urlparse(url)
+                        full_url = f"{parsed_url.scheme}://{parsed_url.netloc}{href}" if href.startswith('/') else f"{url.rstrip('/')}/{href}"
+                    else:
+                        full_url = href
+                    
+                    all_found_links.append(full_url)
+                    is_product = is_product_url(full_url)
+                    if is_product:
+                        product_links.append(full_url)
+                    
+                    print(f"  [{i+1}] {full_url[:80]}{'...' if len(full_url) > 80 else ''}")
+                    print(f"      Text: {text}")
+                    print(f"      Is Product: {'✓' if is_product else '✗'}")
+    
+    # Debug: Hiển thị một phần HTML để phân tích
+    print(f"\n--- MẪU HTML (1000 ký tự đầu) ---")
+    print(html[:1000])
+    print("...")
+    
+    # Debug: Tìm tất cả các link và phân tích pattern
+    print(f"\n--- PHÂN TÍCH TẤT CẢ LINK ---")
+    all_links = soup.select('a[href]')
+    print(f"Tổng số link trên trang: {len(all_links)}")
+    
+    # Phân loại link theo pattern
+    patterns = {
+        'san-pham': [],
+        'product': [],
+        'vn_with_id': [],  # pattern /vn/name_id
+        'category': [],
+        'other': []
+    }
+    
+    for link in all_links[:20]:  # Chỉ phân tích 20 link đầu
+        href = link.get('href', '')
+        if '/san-pham/' in href:
+            patterns['san-pham'].append(href)
+        elif '/product/' in href:
+            patterns['product'].append(href)
+        elif re.search(r'/vn/[^/]+_\d+', href):
+            patterns['vn_with_id'].append(href)
+        elif 'category' in href.lower():
+            patterns['category'].append(href)
+        else:
+            patterns['other'].append(href)
+    
+    for pattern_name, links in patterns.items():
+        if links:
+            print(f"Pattern '{pattern_name}': {len(links)} link")
+            for link in links[:3]:
+                print(f"  - {link}")
+    
+    # Loại bỏ trùng lặp
+    unique_links = list(dict.fromkeys(all_found_links))
+    unique_product_links = list(dict.fromkeys(product_links))
+    
+    print(f"\n=== KẾT QUẢ DEBUG ===")
+    print(f"Tổng số link tìm thấy: {len(unique_links)}")
+    print(f"Số link sản phẩm hợp lệ: {len(unique_product_links)}")
+    
+    if unique_product_links:
+        print("\nCác URL sản phẩm hợp lệ:")
+        for i, link in enumerate(unique_product_links[:10]):  # Hiển thị tối đa 10
+            print(f"  {i+1}. {link}")
+    else:
+        print("\n⚠️  KHÔNG TÌM THẤY URL SẢN PHẨM NÀO!")
+        print("Điều này có thể do:")
+        print("  1. Cấu trúc HTML của trang đã thay đổi")
+        print("  2. Selector không phù hợp với trang này")
+        print("  3. Trang không chứa sản phẩm")
+        print("  4. Cần cập nhật hàm is_product_url()")
+    
+    return unique_product_links
+
+def test_baa_url_direct(url="https://baa.vn/vn/Category/den-thap-led-qlight_1479_1/"):
+    """
+    Hàm test trực tiếp với URL BAA.vn để debug
+    """
+    print(f"\n=== TEST TRỰC TIẾP URL BAA.VN ===")
+    print(f"URL: {url}")
+    
+    try:
+        # Test tải HTML
+        html = get_html_content(url)
+        if not html:
+            print("❌ Không thể tải HTML")
+            return
+        
+        print(f"✅ Đã tải HTML: {len(html)} ký tự")
+        
+        # Parse HTML
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Tìm title
+        title = soup.select_one('title')
+        if title:
+            print(f"📄 Title: {title.get_text(strip=True)}")
+        
+        # Tìm tất cả link trên trang
+        all_links = soup.select('a[href]')
+        print(f"🔗 Tổng số link trên trang: {len(all_links)}")
+        
+        # Tìm các pattern URL phổ biến
+        print(f"\n--- PHÂN TÍCH PATTERN URL ---")
+        patterns_found = {
+            'vn_with_number': [],
+            'san_pham': [],
+            'category': [],
+            'other': []
+        }
+        
+        for link in all_links:
+            href = link.get('href', '')
+            if not href:
+                continue
+                
+            # Tạo full URL
+            if not href.startswith('http'):
+                parsed_url = urlparse(url)
+                full_url = f"{parsed_url.scheme}://{parsed_url.netloc}{href}" if href.startswith('/') else f"{url.rstrip('/')}/{href}"
+            else:
+                full_url = href
+            
+            # Phân loại
+            if re.search(r'/vn/[^/]+_\d+', full_url):
+                patterns_found['vn_with_number'].append(full_url)
+            elif '/san-pham/' in full_url:
+                patterns_found['san_pham'].append(full_url)
+            elif 'category' in full_url.lower():
+                patterns_found['category'].append(full_url)
+            else:
+                patterns_found['other'].append(full_url)
+        
+        # Hiển thị kết quả
+        for pattern_name, urls in patterns_found.items():
+            if urls:
+                print(f"\n{pattern_name.upper()}: {len(urls)} URL")
+                for i, link_url in enumerate(urls[:5]):  # Chỉ hiển thị 5 URL đầu
+                    is_product = is_product_url(link_url)
+                    is_category = is_category_url(link_url)
+                    print(f"  {i+1}. {link_url}")
+                    print(f"     Product: {'✅' if is_product else '❌'} | Category: {'✅' if is_category else '❌'}")
+        
+        # Test extract_product_urls
+        print(f"\n--- TEST EXTRACT_PRODUCT_URLS ---")
+        product_urls = extract_product_urls(url)
+        print(f"🎯 Kết quả extract_product_urls: {len(product_urls)} URL")
+        
+        if product_urls:
+            print("Các URL sản phẩm tìm được:")
+            for i, prod_url in enumerate(product_urls[:5]):
+                print(f"  {i+1}. {prod_url}")
+        else:
+            print("❌ Không tìm được URL sản phẩm nào!")
+        
+        return product_urls
+        
+    except Exception as e:
+        print(f"❌ Lỗi khi test: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+def _is_baa_product_url(url):
+    """Kiểm tra URL sản phẩm đặc biệt cho BAA.vn"""
+    if 'baa.vn' not in url.lower():
+        return False
+    
+    # Pattern 1: /vn/san-pham/...
+    if '/san-pham/' in url:
+        return True
+    
+    # Pattern 2: /vn/name_number (nhưng không phải Category)
+    if re.search(r'/vn/[^/]+_\d+/?$', url) and '/Category/' not in url:
+        # Loại bỏ các URL category hoặc các URL không phải sản phẩm
+        excluded_keywords = ['category', 'list', 'search', 'page', 'menu', 'navigation']
+        if not any(keyword in url.lower() for keyword in excluded_keywords):
+            return True
+    
+    return False
+
+def extract_baa_product_price(soup, product_name=""):
+    """
+    Trích xuất giá sản phẩm từ BAA.vn với logic đặc biệt:
+    - Chỉ lấy giá từ span.product__price-print có data-root
+    - Trả về chuỗi rỗng nếu không có cấu trúc giá hợp lệ
+    - Giảm 5% cho sản phẩm có giá
+    
+    Args:
+        soup: BeautifulSoup object của trang sản phẩm
+        product_name: Tên sản phẩm để kiểm tra thêm
+        
+    Returns:
+        str: Giá đã xử lý hoặc "" nếu không có giá
+    """
+    try:
+        # 1. Chỉ tìm giá từ span.product__price-print có data-root
+        price_element = soup.select_one('span.product__price-print[data-root]')
+        
+        if not price_element or not price_element.get('data-root'):
+            print(f"  → Không có cấu trúc giá hợp lệ - để trống giá")
+            return ""
+        
+        # 2. Lấy giá từ data-root
+        try:
+            price_value = float(price_element.get('data-root'))
+            print(f"  → Tìm thấy giá từ product__price-print data-root: {price_value:,.0f}")
+        except (ValueError, TypeError):
+            print(f"  → data-root không hợp lệ: {price_element.get('data-root')} - để trống giá")
+            return ""
+        
+        # 3. Kiểm tra giá có hợp lệ không
+        if price_value <= 0:
+            print(f"  → Giá không hợp lệ: {price_value} - để trống giá")
+            return ""
+        
+        # 4. Áp dụng giảm giá 5%
+        discounted_price = price_value * 0.95  # Giảm 5%
+        
+        # 5. Tìm đơn vị tiền tệ từ span.product__price-unit
+        unit_element = soup.select_one('span.product__price-unit')
+        currency = "₫"  # Mặc định
+        if unit_element:
+            currency = unit_element.get_text(strip=True).replace('&nbsp;', ' ').strip()
+        
+        # 6. Định dạng giá cuối cùng
+        formatted_price = f"{discounted_price:,.0f}{currency}".replace(",", ".")
+        
+        print(f"  → Giá gốc: {price_value:,.0f}{currency} → Giá sau giảm 5%: {formatted_price}")
+        
+        return formatted_price
+        
+    except Exception as e:
+        print(f"  → Lỗi khi trích xuất giá: {str(e)}")
+        return ""

@@ -76,3 +76,31 @@ def create_zip_from_folder(folder_path, zip_path):
         print(f"Lỗi khi tạo file ZIP: {str(e)}")
         print(f"Chi tiết lỗi: {traceback.format_exc()}")
         return False 
+
+def standardize_filename(product_code):
+    """
+    Chuẩn hóa tên file từ mã sản phẩm.
+    Thay thế các ký tự không hợp lệ bằng dấu gạch ngang và loại bỏ các dấu gạch ngang trùng lặp.
+    
+    Args:
+        product_code (str): Mã sản phẩm cần chuẩn hóa
+        
+    Returns:
+        str: Tên file đã được chuẩn hóa
+    """
+    import re
+    
+    # Thay thế các ký tự không hợp lệ bằng dấu gạch ngang
+    invalid_chars = r'[\\/:*?"<>|,=\s]'
+    normalized = re.sub(invalid_chars, '-', product_code)
+    
+    # Loại bỏ các dấu gạch ngang trùng lặp
+    normalized = re.sub(r'-+', '-', normalized)
+    
+    # Chỉ giữ lại chữ cái, số, dấu gạch ngang và gạch dưới
+    normalized = re.sub(r'[^a-zA-Z0-9\-_]', '', normalized)
+    
+    # Loại bỏ dấu gạch ngang ở đầu và cuối chuỗi
+    normalized = normalized.strip('-')
+    
+    return normalized 
