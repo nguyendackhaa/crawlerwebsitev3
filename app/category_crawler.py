@@ -657,86 +657,110 @@ class CategoryCrawler:
             traceback.print_exc()
             
     def extract_codienhaiau_product_info(self, url, index=1, output_dir=None):
-        """Trích xuất thông tin sản phẩm từ trang codienhaiau.com"""
+        """
+        Trích xuất thông tin sản phẩm từ trang codienhaiau.com
+        
+        Args:
+            url (str): URL của trang sản phẩm
+            index (int): Số thứ tự của sản phẩm
+            output_dir (str, optional): Thư mục để lưu ảnh sản phẩm
+            
+        Returns:
+            dict: Thông tin sản phẩm đã trích xuất
+        """
+        # Khởi tạo kết quả với các trường cần thiết
+        product_info = {
+            'STT': index,
+            'URL': url,
+            'Mã sản phẩm': "",
+            'Tên sản phẩm': "",
+            'Giá': "",
+            'Tổng quan': "",
+            'Ảnh sản phẩm': ""
+        }
+        
         try:
-            print(f"Đang trích xuất thông tin từ {url}")
-            # Khởi tạo kết quả chỉ với các trường cần thiết
-            product_info = {
-                'STT': index,
-                'URL': url,
-                'Mã sản phẩm': "",
-                'Tên sản phẩm': "",
-                'Giá': "",
-                'Mô tả': "",
-                'Tổng quan': "",
-                'Ảnh sản phẩm': ""
-            }
             # Tải nội dung trang với retry
-            print(f"  > Đang tải nội dung trang {url}")
-            response = None
+            soup = None
             for attempt in range(self.max_retries):
                 try:
-                    response = requests.get(
-                        url, 
-                        headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}, 
-                        timeout=self.request_timeout
-                    )
-                    response.raise_for_status()
-                    print(f"  > Đã tải trang thành công sau {attempt+1} lần thử")
-                    break
-                except (requests.RequestException, Exception) as e:
+                    soup = self._get_soup(url)
+                    if soup:
+                        break
+                except Exception as e:
+                    print(f"  > Lỗi khi tải trang (lần {attempt+1}/{self.max_retries}): {str(e)}")
                     if attempt < self.max_retries - 1:
-                        print(f"  > Lỗi khi tải {url}, thử lại lần {attempt + 1}: {str(e)}")
-                        time.sleep(self.retry_delay)
-                    else:
-                        print(f"  > Lỗi khi tải {url} sau {self.max_retries} lần thử: {str(e)}")
-                        raise
-            if not response:
-                raise Exception(f"Không thể tải nội dung từ {url}")
-            # Parse HTML
-            print(f"  > Đang phân tích HTML từ {url}")
-            soup = BeautifulSoup(response.text, 'lxml')  # Sử dụng parser lxml thay vì html.parser
-            print(f"  > Đã phân tích HTML thành công")
-            # Trích xuất tên sản phẩm
-            product_name = ""
-            name_element = soup.select_one('h1.mb-0, h1.product-title, h1.product_title')
-            if name_element:
-                product_name = name_element.text.strip()
-                print(f"  > Tìm thấy tên sản phẩm: {product_name}")
-                product_info['Tên sản phẩm'] = product_name
-            # Trích xuất mã sản phẩm
-            product_code = ""
-            code_element = soup.select_one('div.text-muted strong, .sku, .product_meta .sku')
-            if code_element:
-                product_code = code_element.text.strip()
-                print(f"  > Tìm thấy mã sản phẩm: {product_code}")
-                product_info['Mã sản phẩm'] = product_code
-            # Nếu không tìm được mã sản phẩm từ div.text-muted, thử trích xuất từ source HTML
-            if not product_code:
-                # Tìm mã sản phẩm từ JS hoặc cấu trúc HTML
-                pattern = r'"sku":\s*"([^"]+)"'
-                match = re.search(pattern, str(soup))
-                if match:
-                    product_code = match.group(1)
-                    print(f"  > Tìm thấy mã sản phẩm từ JS: {product_code}")
-                    product_info['Mã sản phẩm'] = product_code
-                    
-                # Thử tìm trong product_meta
-                if not product_code:
-                    meta = soup.select_one('.product_meta')
-                    if meta:
-                        sku_text = meta.text
-                        sku_match = re.search(r'Mã: (.*)', sku_text)
-                        if sku_match:
-                            product_code = sku_match.group(1).strip()
-                            print(f"  > Tìm thấy mã sản phẩm từ product_meta: {product_code}")
-                            product_info['Mã sản phẩm'] = product_code
+                        time.sleep(1)  # Chờ 1 giây trước khi thử lại
             
-            # Trích xuất giá sản phẩm
-            price_text = ""
-            price_element = soup.select_one('span.price-new, .price .woocommerce-Price-amount, p.price, .summary .price')
-            if price_element:
-                price_text = price_element.text.strip()
+            if not soup:
+                print(f"  > Không thể tải nội dung trang sau {self.max_retries} lần thử")
+                return product_info
+            
+            # TRÍCH XUẤT TÊN SẢN PHẨM
+            product_name_elem = soup.select_one('h1.product_title')
+            if product_name_elem:
+                product_name = product_name_elem.get_text(strip=True)
+                product_info['Tên sản phẩm'] = product_name
+                print(f"  > Tìm thấy tên sản phẩm: {product_name}")
+            
+            # TRÍCH XUẤT MÃ SẢN PHẨM
+            # Phương pháp 1: Từ tiêu đề sản phẩm
+            product_code = ""
+            if product_info['Tên sản phẩm']:
+                # Tìm mã sản phẩm trong tên (thường ở cuối tên, sau dấu gạch ngang hoặc khoảng trắng)
+                name_parts = product_info['Tên sản phẩm'].split('-')
+                if len(name_parts) > 1:
+                    potential_code = name_parts[-1].strip()
+                    # Kiểm tra xem phần cuối có phải là mã sản phẩm không
+                    if re.match(r'^[A-Za-z0-9\-_]+$', potential_code):
+                        product_code = potential_code
+                        print(f"  > Tìm thấy mã sản phẩm từ tên (phương pháp 1): {product_code}")
+            
+            # Phương pháp 2: Từ SKU hoặc mã sản phẩm hiển thị riêng
+            if not product_code:
+                sku_elem = soup.select_one('.sku_wrapper .sku, .product_meta .sku, [itemprop="sku"]')
+                if sku_elem:
+                    product_code = sku_elem.get_text(strip=True)
+                    print(f"  > Tìm thấy mã sản phẩm từ SKU (phương pháp 2): {product_code}")
+            
+            # Phương pháp 3: Tìm trong bảng thông số kỹ thuật
+            if not product_code:
+                # Tìm trong bảng thông số kỹ thuật
+                specs_table = soup.select_one('table.woocommerce-product-attributes, table.shop_attributes')
+                if specs_table:
+                    for row in specs_table.select('tr'):
+                        header = row.select_one('th')
+                        value = row.select_one('td')
+                        if header and value and ('mã' in header.get_text(strip=True).lower() or 'model' in header.get_text(strip=True).lower()):
+                            product_code = value.get_text(strip=True)
+                            print(f"  > Tìm thấy mã sản phẩm từ bảng thông số (phương pháp 3): {product_code}")
+                            break
+            
+            # Phương pháp 4: Từ URL
+            if not product_code:
+                # Trích xuất từ URL (thường là phần cuối URL)
+                url_parts = url.rstrip('/').split('/')
+                if url_parts:
+                    last_part = url_parts[-1]
+                    # Nếu có dấu gạch ngang, lấy phần cuối cùng
+                    if '-' in last_part:
+                        potential_code = last_part.split('-')[-1]
+                        # Kiểm tra xem phần cuối có phải là mã sản phẩm không
+                        if re.match(r'^[A-Za-z0-9\-_]+$', potential_code):
+                            product_code = potential_code
+                            print(f"  > Tìm thấy mã sản phẩm từ URL (phương pháp 4): {product_code}")
+            
+            # Lưu mã sản phẩm đã tìm thấy (viết hoa)
+            if product_code:
+                product_info['Mã sản phẩm'] = product_code.upper()
+                print(f"  > Mã sản phẩm cuối cùng: {product_info['Mã sản phẩm']}")
+            
+            # TRÍCH XUẤT GIÁ SẢN PHẨM
+            price_elem = soup.select_one('.price ins .amount, .price .amount, .product-page-price .amount, .woocommerce-Price-amount')
+            if price_elem:
+                price_text = price_elem.get_text(strip=True)
+                # Làm sạch giá (loại bỏ ký tự đặc biệt)
+                price_text = re.sub(r'[^\d,.]', '', price_text)
                 print(f"  > Tìm thấy giá sản phẩm: {price_text}")
                 product_info['Giá'] = price_text
             
@@ -911,7 +935,17 @@ class CategoryCrawler:
             return product_info
 
     def extract_baa_product_info(self, url, index=1, output_dir=None):
-        """Trích xuất thông tin sản phẩm từ trang BAA.vn với khả năng xử lý nội dung ẩn và chuẩn hóa dữ liệu"""
+        """
+        Trích xuất thông tin sản phẩm từ trang BAA.vn với khả năng xử lý nội dung ẩn và chuẩn hóa dữ liệu
+        
+        Args:
+            url (str): URL của trang sản phẩm
+            index (int): Số thứ tự của sản phẩm
+            output_dir (str, optional): Thư mục để lưu ảnh sản phẩm
+            
+        Returns:
+            dict: Thông tin sản phẩm đã trích xuất
+        """
         try:
             print(f"Đang trích xuất thông tin từ {url}")
             
@@ -950,7 +984,10 @@ class CategoryCrawler:
             # Trích xuất mã sản phẩm
             product_code_elem = soup.select_one('.product__symbol__value')
             if product_code_elem:
-                product_info['Mã sản phẩm'] = product_code_elem.text.strip()
+                # Lấy mã sản phẩm và viết hoa
+                product_code = product_code_elem.text.strip()
+                product_info['Mã sản phẩm'] = product_code.upper()
+                print(f"  > Tìm thấy mã sản phẩm: {product_info['Mã sản phẩm']}")
             
             # Trích xuất giá
             price_elem = soup.select_one('.product-detail__price-current')

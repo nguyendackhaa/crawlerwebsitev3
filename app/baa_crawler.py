@@ -106,6 +106,127 @@ def make_pagination_url(base_url, page_number):
         else:
             return f"{base_url}?page={page_number}"
 
+def extract_product_series(url):
+    """
+    Trích xuất thông tin series từ trang sản phẩm BAA.vn
+    Hỗ trợ cả trang sản phẩm đơn lẻ và trang danh mục series
+    
+    Args:
+        url (str): URL của trang sản phẩm hoặc danh mục series
+        
+    Returns:
+        str: Tên series hoặc 'Khac' nếu không tìm thấy
+    """
+    try:
+        print(f"[DEBUG_SERIES] Bắt đầu trích xuất series từ: {url}")
+        html = get_html_content(url)
+        if not html:
+            print(f"[DEBUG_SERIES] Không thể tải HTML từ {url}")
+            return 'Khac'
+        
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Method 1: Tìm thông tin series từ HTML structure sản phẩm đơn lẻ  
+        symbol_headers = soup.select('.product__symbol-header')
+        print(f"[DEBUG_SERIES] Tìm thấy {len(symbol_headers)} symbol headers")
+        
+        for header in symbol_headers:
+            label_span = header.select_one('.product__symbol-label')
+            if label_span and 'series' in label_span.text.lower():
+                value_span = header.select_one('.product__symbol__value')
+                if value_span:
+                    # Thử các cách trích xuất khác nhau
+                    series_candidates = []
+                    
+                    series_link = value_span.select_one('a .color-change-text')
+                    if series_link:
+                        series_candidates.append(series_link.text.strip())
+                    
+                    color_change = value_span.select_one('.color-change-text')
+                    if color_change:
+                        series_candidates.append(color_change.text.strip())
+                    
+                    series_a = value_span.select_one('a')
+                    if series_a:
+                        series_candidates.append(series_a.get_text(strip=True))
+                    
+                    full_text = value_span.get_text(strip=True)
+                    if full_text:
+                        series_candidates.append(full_text)
+                    
+                    for candidate in series_candidates:
+                        if candidate and len(candidate.strip()) > 0:
+                            clean_candidate = candidate.strip()
+                            clean_candidate = re.sub(r'\s*&nbsp;\s*$', '', clean_candidate)
+                            
+                            if clean_candidate:
+                                series_name = re.sub(r'[\\/:*?"<>|]', '_', clean_candidate)
+                                series_name = re.sub(r'\s+', '_', series_name)
+                                
+                                if series_name and series_name != '_':
+                                    print(f"[DEBUG_SERIES] Series từ symbol header: '{series_name}'")
+                                    return series_name
+        
+        # Method 2: Trích xuất từ tiêu đề h1 (cho trang danh mục series)
+        print(f"[DEBUG_SERIES] Thử trích xuất từ tiêu đề h1")
+        h1_elements = soup.select('h1.product__list--title, h1.product__name, h1')
+        for h1 in h1_elements:
+            h1_text = h1.text.strip()
+            print(f"[DEBUG_SERIES] H1 text: '{h1_text}'")
+            
+            # Pattern: Chỉ lấy từ cuối cùng trước "series"
+            # Ví dụ: "HANYOUNG T series" -> "T", "QLIGHT S125TL series" -> "S125TL"
+            series_pattern = r'\b([A-Z0-9]+)\s+series\b'
+            matches = re.findall(series_pattern, h1_text, re.IGNORECASE)
+            if matches:
+                for match in matches:
+                    series_name = match.strip()
+                    if series_name:
+                        clean_series = re.sub(r'[\\/:*?"<>|]', '_', series_name)
+                        clean_series = re.sub(r'\s+', '_', clean_series)
+                        print(f"[DEBUG_SERIES] Series từ h1: '{clean_series}_series'")
+                        return clean_series + '_series'
+        
+        # Method 3: Trích xuất từ URL
+        print(f"[DEBUG_SERIES] Thử trích xuất từ URL")
+        url_pattern = r'/([^/]*series[^/]*?)(?:_\d+)?/?$'
+        url_match = re.search(url_pattern, url, re.IGNORECASE)
+        if url_match:
+            url_series = url_match.group(1)
+            clean_url_series = re.sub(r'[\\/:*?"<>|]', '_', url_series)
+            clean_url_series = re.sub(r'[-_]+', '_', clean_url_series)
+            print(f"[DEBUG_SERIES] Series từ URL: '{clean_url_series}'")
+            return clean_url_series
+        
+        print(f"[DEBUG_SERIES] Không tìm thấy series, sử dụng 'Khac'")
+        return 'Khac'
+        
+    except Exception as e:
+        print(f"[ERROR] Lỗi khi trích xuất series từ {url}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return 'Khac'
+
+def sanitize_folder_name(name):
+    """
+    Làm sạch tên thư mục để tránh ký tự không hợp lệ
+    
+    Args:
+        name (str): Tên cần làm sạch
+        
+    Returns:
+        str: Tên đã được làm sạch
+    """
+    if not name:
+        return 'Khac'
+    
+    # Loại bỏ các ký tự không hợp lệ cho tên thư mục
+    clean_name = re.sub(r'[\\/:*?"<>|]', '_', name)
+    clean_name = re.sub(r'\s+', '_', clean_name)
+    clean_name = clean_name.strip('_.')
+    
+    return clean_name if clean_name else 'Khac'
+
 class BaaProductCrawler:
     def __init__(self, output_root=None, max_workers=8, max_retries=3):
         self.output_root = output_root or os.path.join(os.getcwd(), "output_baa")
@@ -143,6 +264,9 @@ class BaaProductCrawler:
         os.makedirs(result_dir, exist_ok=True)
         all_products = []
         category_folders = []
+        
+        # Thu thập dữ liệu báo cáo ảnh từ tất cả danh mục
+        all_image_report_data = []
         
         # Thông báo bắt đầu
         socketio.emit('progress_update', {
@@ -295,7 +419,8 @@ class BaaProductCrawler:
                 """Thread xử lý thông tin chi tiết sản phẩm từ URL"""
                 products = []
                 code_url_map = {}
-                required_fields = ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Giá', 'Tổng quan', 'URL']
+                series_products_map = {}  # Nhóm sản phẩm theo series
+                required_fields = ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Giá', 'Tổng quan', 'Series', 'URL']
                 batch_size = min(20, max(1, len(product_urls) // 5))
                 
                 # Theo dõi tiến độ trong thread này
@@ -330,6 +455,15 @@ class BaaProductCrawler:
                         try:
                             info = future.result()
                             if info:
+                                # Trích xuất thông tin series từ URL sản phẩm
+                                try:
+                                    product_series = extract_product_series(url)
+                                    info['Series'] = product_series
+                                    print(f"[{cat_name}] Sản phẩm {info.get('Mã sản phẩm', 'N/A')} thuộc series: {product_series}")
+                                except Exception as e:
+                                    print(f"[{cat_name}] Lỗi khi trích xuất series cho {url}: {str(e)}")
+                                    info['Series'] = 'Khac'
+                                
                                 # Kiểm tra xem sản phẩm có giá không để thống kê
                                 product_price = info.get('Giá', '').strip()
                                 
@@ -337,9 +471,18 @@ class BaaProductCrawler:
                                 info['Tổng quan'] = self._normalize_spec(info.get('Tổng quan', ''))
                                 products.append(info)
                                 
-                                # Lưu mã sản phẩm và URL để tải ảnh
+                                # Nhóm sản phẩm theo series
+                                series_name = info['Series']
+                                if series_name not in series_products_map:
+                                    series_products_map[series_name] = []
+                                series_products_map[series_name].append(info)
+                                
+                                # Lưu mã sản phẩm và URL để tải ảnh (nhóm theo series)
                                 if info.get('Mã sản phẩm') and info.get('URL'):
-                                    code_url_map[info['Mã sản phẩm']] = info['URL']
+                                    code_url_map[info['Mã sản phẩm']] = {
+                                        'url': info['URL'],
+                                        'series': series_name
+                                    }
                                 
                                 if not product_price or product_price == '':
                                     # Thống kê sản phẩm không có giá nhưng vẫn xử lý
@@ -386,23 +529,25 @@ class BaaProductCrawler:
                             socketio.emit('progress_update', {
                                 'percent': batch_progress, 
                                 'message': f'[{cat_name}] Đã xử lý {items_processed}/{len(product_urls)} sản phẩm ({batch_success} có giá, {batch_skipped} không có giá, {batch_failure} lỗi)',
-                                'detail': f'Tốc độ: {speed:.1f} sp/s{remaining_info}'
+                                'detail': f'Tốc độ: {speed:.1f} sp/s{remaining_info}, đã phát hiện {len(series_products_map)} series'
                             })
                 
                 # Đặt None vào cuối hàng đợi để báo hiệu đã hoàn thành
                 product_info_queue.put(None)
                 
-                # Đặt code_url_map vào image_task_queue để tải ảnh
-                image_task_queue.put((code_url_map, anh_dir, cat_name, cat_idx, total_categories, step_progress_base + 40))
+                # Đặt code_url_map và series_products_map vào image_task_queue để tải ảnh
+                image_task_queue.put((code_url_map, series_products_map, anh_dir, cat_name, cat_idx, total_categories, step_progress_base + 40))
                 
                 print(f"[{cat_name}] Kết quả xử lý: {batch_success} sản phẩm có giá, {batch_skipped} sản phẩm không có giá, {batch_failure} lỗi")
+                print(f"[{cat_name}] Đã phát hiện {len(series_products_map)} series: {list(series_products_map.keys())}")
                 
-                return products, code_url_map
+                return products, code_url_map, series_products_map
             
             # Thread lưu thông tin sản phẩm vào file Excel
             def save_product_info_thread():
-                """Thread lưu thông tin sản phẩm vào file Excel"""
+                """Thread lưu thông tin sản phẩm vào file Excel theo series"""
                 products = []
+                series_products_map = {}  # Thu thập sản phẩm theo series
                 
                 # Lấy thông tin sản phẩm từ hàng đợi
                 while True:
@@ -410,30 +555,56 @@ class BaaProductCrawler:
                     if info is None:
                         break
                     products.append(info)
+                    
+                    # Nhóm sản phẩm theo series
+                    series_name = info.get('Series', 'Khac')
+                    if series_name not in series_products_map:
+                        series_products_map[series_name] = []
+                    series_products_map[series_name].append(info)
                 
-                # Lưu thông tin vào file Excel
+                # Tạo thư mục cho từng series và lưu dữ liệu
+                for series_name, series_products in series_products_map.items():
+                    # Tạo thư mục series
+                    series_folder_name = sanitize_folder_name(series_name)
+                    series_dir = os.path.join(cat_dir, series_folder_name)
+                    series_anh_dir = os.path.join(series_dir, "Anh")
+                    os.makedirs(series_anh_dir, exist_ok=True)
+                    
+                    # Lưu dữ liệu series vào file Excel riêng
+                    series_excel_file = os.path.join(series_dir, f"{series_folder_name}_Du_lieu.xlsx")
+                    if series_products:
+                        df = pd.DataFrame(series_products)
+                        df.to_excel(series_excel_file, index=False)
+                        print(f"[{cat_name}] Đã lưu dữ liệu series '{series_name}': {len(series_products)} sản phẩm vào {series_excel_file}")
+                
+                # Lưu file tổng hợp tất cả sản phẩm (giữ nguyên chức năng cũ)
                 if products:
                     df = pd.DataFrame(products)
                     df.to_excel(data_excel, index=False)
-                    print(f"[{cat_name}] Đã lưu dữ liệu: {len(products)} sản phẩm")
+                    print(f"[{cat_name}] Đã lưu dữ liệu tổng hợp: {len(products)} sản phẩm")
                 
                 # Thêm các sản phẩm vào danh sách tổng hợp
                 all_products.extend(products)
                 
-                return products
+                print(f"[{cat_name}] Đã phân loại {len(products)} sản phẩm vào {len(series_products_map)} series")
+                return products, series_products_map
             
             # Thread tải ảnh sản phẩm
             def download_images_thread():
                 """Thread tải ảnh sản phẩm"""
                 # Lấy thông tin tải ảnh từ hàng đợi
-                code_url_map, anh_dir, cat_name, cat_idx, total_categories, percent_base = image_task_queue.get()
+                code_url_map, series_products_map, anh_dir, cat_name, cat_idx, total_categories, percent_base = image_task_queue.get()
                 
                 # Tải ảnh sản phẩm
-                img_map = self._download_product_images(code_url_map, anh_dir, cat_name, cat_idx, total_categories, percent_base)
+                img_map, image_report_data = self._download_product_images(code_url_map, series_products_map, anh_dir, cat_name, cat_idx, total_categories, percent_base)
                 
                 # Cập nhật thống kê
                 stats["images_downloaded"] += len(img_map)
                 stats["failed_images"] += len(code_url_map) - len(img_map)
+                
+                # Thu thập dữ liệu báo cáo ảnh để hợp nhất sau này
+                nonlocal all_image_report_data
+                all_image_report_data.extend(image_report_data)
                 
                 return img_map
             
@@ -463,64 +634,129 @@ class BaaProductCrawler:
                 'detail': f'Đã xử lý {len(product_urls)} sản phẩm'
             })
         
-        # Tạo file tổng hợp ngoài cùng
-        report_path = os.path.join(result_dir, 'Tong_hop.xlsx')
-        df = pd.DataFrame(all_products)
-        df.to_excel(report_path, index=False)
+        # Tạo file tổng hợp ngoài cùng với nhiều sheet
+        report_path = os.path.join(result_dir, 'Bao_cao_tong_hop.xlsx')
         
-        # Tạo báo cáo thống kê
-        stats_report_path = os.path.join(report_dir, 'Thong_ke.xlsx')
-        stats_data = [
-            {
-                'Chỉ số': 'Tổng số URL xử lý',
-                'Giá trị': stats["urls_processed"]
-            },
-            {
-                'Chỉ số': 'Số danh mục',
-                'Giá trị': stats["categories"]
-            },
-            {
-                'Chỉ số': 'Số sản phẩm đơn lẻ',
-                'Giá trị': stats["single_products"]
-            },
-            {
-                'Chỉ số': 'Tổng số sản phẩm tìm thấy',
-                'Giá trị': stats["products_found"]
-            },
-            {
-                'Chỉ số': 'Số sản phẩm xử lý thành công',
-                'Giá trị': stats["products_processed"]
-            },
-            {
-                'Chỉ số': 'Số sản phẩm không có giá',
-                'Giá trị': stats["products_skipped"]
-            },
-            {
-                'Chỉ số': 'Số sản phẩm lỗi',
-                'Giá trị': stats["failed_products"]
-            },
-            {
-                'Chỉ số': 'Số ảnh tải thành công',
-                'Giá trị': stats["images_downloaded"]
-            },
-            {
-                'Chỉ số': 'Số ảnh tải thất bại',
-                'Giá trị': stats["failed_images"]
-            },
-            {
-                'Chỉ số': 'Tỷ lệ thành công sản phẩm',
-                'Giá trị': f"{stats['products_processed'] * 100 / max(1, stats['products_found']):.2f}%"
-            },
-            {
-                'Chỉ số': 'Tỷ lệ thành công ảnh',
-                'Giá trị': f"{stats['images_downloaded'] * 100 / max(1, stats['products_processed']):.2f}%"
-            },
-            {
-                'Chỉ số': 'Thời gian xử lý',
-                'Giá trị': f"{(time.time() - start_time) / 60:.2f} phút"
-            }
-        ]
-        pd.DataFrame(stats_data).to_excel(stats_report_path, index=False)
+        # Thu thập thống kê series từ tất cả sản phẩm
+        series_stats = {}
+        for product in all_products:
+            series_name = product.get('Series', 'Khac')
+            if series_name not in series_stats:
+                series_stats[series_name] = {
+                    'So_luong': 0,
+                    'Co_gia': 0,
+                    'Khong_gia': 0,
+                    'Danh_muc': set()
+                }
+            
+            series_stats[series_name]['So_luong'] += 1
+            
+            # Thống kê theo giá
+            product_price = product.get('Giá', '').strip()
+            if product_price:
+                series_stats[series_name]['Co_gia'] += 1
+            else:
+                series_stats[series_name]['Khong_gia'] += 1
+            
+            # Thu thập danh mục chứa series này
+            # Có thể lấy từ URL hoặc thông tin khác
+            product_url = product.get('URL', '')
+            if product_url:
+                # Trích xuất tên danh mục từ URL hoặc context
+                for cat_name in category_map.keys():
+                    series_stats[series_name]['Danh_muc'].add(cat_name)
+                    break  # Chỉ cần 1 danh mục đại diện
+        
+        # Chuyển đổi set thành string cho việc lưu trữ
+        series_summary_data = []
+        for series_name, stats in series_stats.items():
+            series_summary_data.append({
+                'Series': series_name,
+                'Tổng số sản phẩm': stats['So_luong'],
+                'Sản phẩm có giá': stats['Co_gia'],
+                'Sản phẩm không có giá': stats['Khong_gia'],
+                'Tỷ lệ có giá (%)': f"{(stats['Co_gia'] * 100 / stats['So_luong']):.1f}" if stats['So_luong'] > 0 else "0.0",
+                'Các danh mục': ', '.join(stats['Danh_muc']) if stats['Danh_muc'] else 'N/A'
+            })
+        
+        # Tạo một ExcelWriter để ghi nhiều sheet vào cùng một file Excel
+        with pd.ExcelWriter(report_path, engine='openpyxl') as writer:
+            # Sheet dữ liệu sản phẩm
+            if all_products:
+                df = pd.DataFrame(all_products)
+                df.to_excel(writer, sheet_name='Du_lieu_san_pham', index=False)
+            
+            # Sheet thống kê series
+            if series_summary_data:
+                series_df = pd.DataFrame(series_summary_data)
+                # Sắp xếp theo số lượng sản phẩm giảm dần
+                series_df = series_df.sort_values('Tổng số sản phẩm', ascending=False)
+                series_df.to_excel(writer, sheet_name='Thong_ke_series', index=False)
+            
+            # Sheet thống kê tổng quan
+            stats_data = [
+                {
+                    'Chỉ số': 'Tổng số URL xử lý',
+                    'Giá trị': stats["urls_processed"]
+                },
+                {
+                    'Chỉ số': 'Số danh mục',
+                    'Giá trị': stats["categories"]
+                },
+                {
+                    'Chỉ số': 'Số series phát hiện',
+                    'Giá trị': len(series_stats)
+                },
+                {
+                    'Chỉ số': 'Số sản phẩm đơn lẻ',
+                    'Giá trị': stats["single_products"]
+                },
+                {
+                    'Chỉ số': 'Tổng số sản phẩm tìm thấy',
+                    'Giá trị': stats["products_found"]
+                },
+                {
+                    'Chỉ số': 'Số sản phẩm xử lý thành công',
+                    'Giá trị': stats["products_processed"]
+                },
+                {
+                    'Chỉ số': 'Số sản phẩm không có giá',
+                    'Giá trị': stats["products_skipped"]
+                },
+                {
+                    'Chỉ số': 'Số sản phẩm lỗi',
+                    'Giá trị': stats["failed_products"]
+                },
+                {
+                    'Chỉ số': 'Số ảnh tải thành công',
+                    'Giá trị': stats["images_downloaded"]
+                },
+                {
+                    'Chỉ số': 'Số ảnh tải thất bại',
+                    'Giá trị': stats["failed_images"]
+                },
+                {
+                    'Chỉ số': 'Tỷ lệ thành công sản phẩm',
+                    'Giá trị': f"{stats['products_processed'] * 100 / max(1, stats['products_found']):.2f}%"
+                },
+                {
+                    'Chỉ số': 'Tỷ lệ thành công ảnh',
+                    'Giá trị': f"{stats['images_downloaded'] * 100 / max(1, stats['products_processed']):.2f}%"
+                },
+                {
+                    'Chỉ số': 'Thời gian xử lý',
+                    'Giá trị': f"{(time.time() - start_time) / 60:.2f} phút"
+                }
+            ]
+            stats_df = pd.DataFrame(stats_data)
+            stats_df.to_excel(writer, sheet_name='Thong_ke_tong_quan', index=False)
+            
+            # Sheet báo cáo tải ảnh
+            if all_image_report_data:
+                image_df = pd.DataFrame(all_image_report_data)
+                # Sắp xếp theo series và mã sản phẩm
+                image_df = image_df.sort_values(['Series', 'Mã sản phẩm'], ascending=[True, True])
+                image_df.to_excel(writer, sheet_name='Bao_cao_anh', index=False)
         
         # Nén thư mục kết quả thành file ZIP
         socketio.emit('progress_update', {
@@ -530,6 +766,8 @@ class BaaProductCrawler:
         })
         
         zip_path = result_dir + '.zip'
+        zip_filename = os.path.basename(zip_path)
+        
         try:
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for folder in category_folders:
@@ -539,31 +777,58 @@ class BaaProductCrawler:
                             arcname = os.path.relpath(file_path, result_dir)
                             zipf.write(file_path, arcname)
                 
-                # Thêm file tổng hợp vào ZIP
+                # Thêm file báo cáo duy nhất vào ZIP
                 zipf.write(report_path, os.path.basename(report_path))
-                zipf.write(stats_report_path, f"Bao_cao/{os.path.basename(stats_report_path)}")
         except Exception as e:
             print(f"Lỗi khi nén thư mục: {str(e)}")
             socketio.emit('progress_update', {
                 'percent': 100, 
                 'message': f'Hoàn thành lấy dữ liệu {len(all_products)} sản phẩm (không nén được)',
-                'detail': f'Đã xảy ra lỗi khi nén: {str(e)}'
+                'detail': f'Đã xảy ra lỗi khi nén: {str(e)}',
+                'completed': True,
+                'download_ready': False
             })
         else:
             # Tính toán tổng thời gian và hiệu suất
             total_time = time.time() - start_time
             products_per_second = stats["products_processed"] / total_time if total_time > 0 else 0
             
+            # Tạo thông tin chi tiết cho download
+            download_info = {
+                'zip_path': zip_path,
+                'zip_filename': zip_filename,
+                'download_url': f'/download-baa-result/{zip_filename}',
+                'total_products': len(all_products),
+                'total_series': len(series_stats),
+                'total_categories': stats["categories"],
+                'processing_time': f"{total_time/60:.2f} phút",
+                'success_rate': f"{stats['products_processed'] * 100 / max(1, stats['products_found']):.1f}%",
+                'image_success_rate': f"{stats['images_downloaded'] * 100 / max(1, stats['products_processed']):.1f}%",
+                'file_size': f"{os.path.getsize(zip_path) / (1024 * 1024):.2f} MB" if os.path.exists(zip_path) else "N/A"
+            }
+            
             socketio.emit('progress_update', {
                 'percent': 100, 
-                'message': f'Hoàn thành lấy dữ liệu {len(all_products)} sản phẩm',
-                'detail': f'Thời gian: {total_time/60:.2f} phút, tốc độ: {products_per_second:.2f} sp/s'
+                'message': f'🎉 Hoàn thành! Đã cào được {len(all_products)} sản phẩm từ {len(series_stats)} series',
+                'detail': f'Thời gian: {total_time/60:.2f} phút • Tốc độ: {products_per_second:.2f} sp/s • File: {zip_filename}',
+                'completed': True,
+                'download_ready': True,
+                'download_info': download_info,
+                'series_stats': [
+                    {
+                        'series_name': series_name,
+                        'product_count': stats_info['So_luong'],
+                        'success_rate': f"{(stats_info['Co_gia'] * 100 / stats_info['So_luong']):.1f}%" if stats_info['So_luong'] > 0 else "0%"
+                    }
+                    for series_name, stats_info in sorted(series_stats.items(), key=lambda x: x[1]['So_luong'], reverse=True)[:10]  # Top 10 series
+                ]
             })
         
         # Ghi log tổng kết
-        print(f"=== Thống kê cào dữ liệu BAA.vn ===")
+        print(f"=== Thống kê cào dữ liệu BAA.vn (Có hỗ trợ Series) ===")
         print(f"Tổng URL xử lý: {stats['urls_processed']}")
         print(f"Số danh mục: {stats['categories']}")
+        print(f"Số series phát hiện: {len(series_stats)}")
         print(f"Số sản phẩm đơn lẻ: {stats['single_products']}")
         print(f"Tổng sản phẩm tìm thấy: {stats['products_found']}")
         print(f"Sản phẩm xử lý thành công: {stats['products_processed']}")
@@ -573,7 +838,18 @@ class BaaProductCrawler:
         print(f"Ảnh tải thất bại: {stats['failed_images']}")
         print(f"Thời gian xử lý: {total_time:.2f}s ({total_time/60:.2f} phút)")
         print(f"Tốc độ trung bình: {products_per_second:.2f} sản phẩm/giây")
-        print(f"===============================")
+        
+        # Log chi tiết về các series
+        if series_stats:
+            print(f"\n=== Chi tiết Series phát hiện ===")
+            sorted_series = sorted(series_stats.items(), key=lambda x: x[1]['So_luong'], reverse=True)
+            for series_name, stats_info in sorted_series:
+                success_rate = (stats_info['Co_gia'] * 100 / stats_info['So_luong']) if stats_info['So_luong'] > 0 else 0
+                print(f"- {series_name}: {stats_info['So_luong']} sản phẩm " +
+                      f"({stats_info['Co_gia']} có giá, {stats_info['Khong_gia']} không có giá, " +
+                      f"tỷ lệ có giá: {success_rate:.1f}%)")
+        
+        print(f"=======================================")
         
         return all_products, result_dir
 
@@ -749,47 +1025,65 @@ class BaaProductCrawler:
         
         return unique_product_urls
 
-    def _download_product_images(self, code_url_map, anh_dir, category_name, category_idx=0, total_categories=1, percent_base=50):
-        """Tải ảnh sản phẩm với xử lý lỗi và retry thông minh, tạo một báo cáo duy nhất"""
+    def _download_product_images(self, code_url_map, series_products_map, anh_dir, category_name, category_idx=0, total_categories=1, percent_base=50):
+        """Tải ảnh sản phẩm với xử lý lỗi và retry thông minh, tạo một báo cáo duy nhất, nhóm theo series"""
         img_map = {}
         
         if not code_url_map:
-            return img_map
+            return img_map, []
         
-        # Tạo thư mục hình ảnh nếu chưa tồn tại
+        # Tạo thư mục hình ảnh cho danh mục chính nếu chưa tồn tại
         os.makedirs(anh_dir, exist_ok=True)
         
+        # Tạo thư mục ảnh cho từng series
+        series_img_dirs = {}
+        for series_name in series_products_map.keys():
+            series_folder_name = sanitize_folder_name(series_name)
+            series_dir = os.path.join(os.path.dirname(anh_dir), series_folder_name)
+            series_img_dir = os.path.join(series_dir, "Anh")
+            os.makedirs(series_img_dir, exist_ok=True)
+            series_img_dirs[series_name] = series_img_dir
+        
         # Log thông tin bắt đầu
-        print(f"[{category_name}] Bắt đầu tải {len(code_url_map)} ảnh sản phẩm")
+        print(f"[{category_name}] Bắt đầu tải {len(code_url_map)} ảnh sản phẩm vào {len(series_img_dirs)} series")
         
         # Thời gian bắt đầu
         start_time = time.time()
         
-        # Tạo file báo cáo tải ảnh duy nhất cho danh mục
-        image_report_path = os.path.join(os.path.dirname(anh_dir), f"Bao_cao_anh.xlsx")
+        # Chuẩn bị dữ liệu cho báo cáo tải ảnh (được hợp nhất với báo cáo chính)
+        image_report_data = []
         
         def download_img_worker(item):
-            """Worker function để tải ảnh với retry thông minh"""
-            code, url = item
+            """Worker function để tải ảnh với retry thông minh và lưu theo series"""
+            code, url_info = item
+            
+            # Xử lý url_info (có thể là string hoặc dict)
+            if isinstance(url_info, dict):
+                url = url_info.get('url', '')
+                series_name = url_info.get('series', 'Khac')
+            else:
+                url = url_info
+                series_name = 'Khac'
+            
             if not url:
                 return code, '', 'URL trống', None
             
-            # Ghi log file và trạng thái
-            log_file = os.path.join(anh_dir, f"{code}_log.txt")
+            # Xác định thư mục ảnh theo series
+            target_img_dir = series_img_dirs.get(series_name, anh_dir)
+            
+            # Ghi nhận trạng thái không cần file log riêng
             success_msg = None
             error_msg = None
             download_time = 0
             
             try:
                 # Kiểm tra xem ảnh đã tồn tại chưa (tránh tải lại)
-                existing_image = os.path.join(anh_dir, f"{code}.webp")
+                existing_image = os.path.join(target_img_dir, f"{code}.webp")
                 if os.path.exists(existing_image) and os.path.getsize(existing_image) > 0:
-                    # Ghi log thành công 
-                    with open(log_file, 'w', encoding='utf-8') as f:
-                        f.write(f"Ảnh đã tồn tại và có kích thước {os.path.getsize(existing_image)} bytes\n")
                     return code, existing_image, 'Đã tồn tại', {
                         'Mã sản phẩm': code,
                         'URL': url,
+                        'Series': series_name,
                         'Trạng thái': 'Đã tồn tại',
                         'Đường dẫn ảnh': existing_image,
                         'Kích thước (bytes)': os.path.getsize(existing_image),
@@ -802,13 +1096,8 @@ class BaaProductCrawler:
                 
                 for retry in range(self.max_retries):
                     try:
-                        # Ghi thông tin vào log
-                        retry_msg = f"Lần thử {retry+1}/{self.max_retries}" if retry > 0 else "Lần đầu tải"
-                        with open(log_file, 'a', encoding='utf-8') as f:
-                            f.write(f"{datetime.now().strftime('%H:%M:%S')} - {retry_msg} - URL: {url}\n")
-                        
-                        # Thử tải ảnh
-                        result = download_baa_product_images_fixed([url], anh_dir, create_report=False)
+                        # Thử tải ảnh vào thư mục series
+                        result = download_baa_product_images_fixed([url], target_img_dir, create_report=False)
                         
                         if result and result.get('report_data'):
                             for r in result['report_data']:
@@ -820,15 +1109,14 @@ class BaaProductCrawler:
                                         # Tính thời gian tải
                                         download_time = time.time() - download_start
                                         
-                                        # Ghi thông tin thành công
-                                        success_msg = f"Tải thành công, kích thước: {os.path.getsize(image_path)} bytes"
-                                        with open(log_file, 'a', encoding='utf-8') as f:
-                                            f.write(f"{datetime.now().strftime('%H:%M:%S')} - {success_msg}\n")
+                                        # Ghi nhận thông tin thành công
+                                        success_msg = f"Tải thành công vào series {series_name}, kích thước: {os.path.getsize(image_path)} bytes"
                                         
                                         # Trả về thông tin đầy đủ
                                         return code, image_path, success_msg, {
                                             'Mã sản phẩm': code,
                                             'URL': url,
+                                            'Series': series_name,
                                             'Trạng thái': 'Thành công',
                                             'Đường dẫn ảnh': image_path,
                                             'Kích thước (bytes)': os.path.getsize(image_path),
@@ -842,17 +1130,10 @@ class BaaProductCrawler:
                         
                         # Nếu không thành công, chờ và thử lại
                         if retry < self.max_retries - 1:
-                            # Ghi log lỗi và sẽ thử lại
-                            with open(log_file, 'a', encoding='utf-8') as f:
-                                f.write(f"{datetime.now().strftime('%H:%M:%S')} - Lỗi: {error_msg}, sẽ thử lại sau {retry_delays[retry]}s\n")
-                            
                             # Chờ theo thời gian retry với backoff
                             time.sleep(retry_delays[min(retry, len(retry_delays)-1)])
                     except Exception as e:
                         error_msg = str(e)
-                        # Ghi log lỗi ngoại lệ
-                        with open(log_file, 'a', encoding='utf-8') as f:
-                            f.write(f"{datetime.now().strftime('%H:%M:%S')} - Ngoại lệ: {error_msg}\n")
                         
                         if retry < self.max_retries - 1:
                             time.sleep(retry_delays[min(retry, len(retry_delays)-1)])
@@ -860,13 +1141,10 @@ class BaaProductCrawler:
                 # Tính thời gian tải tổng cộng
                 download_time = time.time() - download_start
                 
-                # Ghi nhận thất bại sau khi đã thử hết số lần
-                with open(log_file, 'a', encoding='utf-8') as f:
-                    f.write(f"{datetime.now().strftime('%H:%M:%S')} - Thất bại sau {self.max_retries} lần thử\n")
-                
                 return code, '', f"Lỗi sau {self.max_retries} lần thử: {error_msg}", {
                     'Mã sản phẩm': code,
                     'URL': url,
+                    'Series': series_name,
                     'Trạng thái': 'Thất bại',
                     'Đường dẫn ảnh': '',
                     'Kích thước (bytes)': 0,
@@ -879,13 +1157,10 @@ class BaaProductCrawler:
                 error_msg = str(e)
                 download_time = time.time() - download_start
                 
-                # Ghi log lỗi ngoại lệ chính
-                with open(log_file, 'a', encoding='utf-8') as f:
-                    f.write(f"{datetime.now().strftime('%H:%M:%S')} - Lỗi nghiêm trọng: {error_msg}\n")
-                
                 return code, '', f"Lỗi ngoài: {error_msg}", {
                     'Mã sản phẩm': code,
                     'URL': url,
+                    'Series': series_name,
                     'Trạng thái': 'Lỗi',
                     'Đường dẫn ảnh': '',
                     'Kích thước (bytes)': 0,
@@ -908,6 +1183,11 @@ class BaaProductCrawler:
         # Dữ liệu cho báo cáo tải ảnh
         image_report_data = []
         
+        # Thống kê theo series
+        series_stats = {}
+        for series_name in series_products_map.keys():
+            series_stats[series_name] = {'success': 0, 'fail': 0}
+        
         # Xử lý đa luồng tải ảnh với theo dõi tiến độ
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # Tạo các future cho việc tải ảnh
@@ -921,13 +1201,18 @@ class BaaProductCrawler:
                     
                     if report_entry:
                         image_report_data.append(report_entry)
+                        series_name = report_entry.get('Series', 'Khac')
                     
                     if code:
                         if img_path:
                             img_map[code] = img_path
                             success_count += 1
+                            if series_name in series_stats:
+                                series_stats[series_name]['success'] += 1
                         else:
                             fail_count += 1
+                            if series_name in series_stats:
+                                series_stats[series_name]['fail'] += 1
                             print(f"[{category_name}] Không thể tải ảnh cho {code}: {status}")
                 except Exception as e:
                     fail_count += 1
@@ -965,17 +1250,27 @@ class BaaProductCrawler:
                     'percent': percent, 
                     'message': f'[{category_name}] Đã tải ảnh {items_done}/{total_images} ' +
                               f'(thành công: {success_count}, thất bại: {fail_count})',
-                    'detail': f'Tốc độ: {current_speed:.1f} ảnh/s{remaining_info}'
+                    'detail': f'Tốc độ: {current_speed:.1f} ảnh/s{remaining_info}, {len(series_img_dirs)} series'
                 })
         
-        # Tạo báo cáo Excel duy nhất cho việc tải ảnh
+        # Tạo báo cáo Excel cho việc tải ảnh (lưu vào danh sách dữ liệu, sẽ được hợp nhất vào báo cáo chính)
         if image_report_data:
+            # Sắp xếp dữ liệu báo cáo theo series và mã sản phẩm để dễ tra cứu
             try:
-                df = pd.DataFrame(image_report_data)
-                df.to_excel(image_report_path, index=False)
-                print(f"[{category_name}] Đã tạo báo cáo tải ảnh: {image_report_path}")
+                sorted_data = sorted(image_report_data, key=lambda x: (x.get('Series', ''), x.get('Mã sản phẩm', '')))
+                print(f"[{category_name}] Đã thu thập {len(sorted_data)} bản ghi báo cáo tải ảnh")
+                
+                # Log thống kê theo series
+                print(f"[{category_name}] Thống kê tải ảnh theo series:")
+                for series_name, stats in series_stats.items():
+                    total_series = stats['success'] + stats['fail']
+                    if total_series > 0:
+                        success_rate = (stats['success'] * 100) / total_series
+                        print(f"  - {series_name}: {stats['success']}/{total_series} thành công ({success_rate:.1f}%)")
+                
+                return img_map, sorted_data
             except Exception as e:
-                print(f"[{category_name}] Lỗi khi tạo báo cáo tải ảnh: {str(e)}")
+                print(f"[{category_name}] Lỗi khi sắp xếp báo cáo tải ảnh: {str(e)}")
         
         # Báo cáo kết quả cuối cùng
         total_time = time.time() - start_time
@@ -985,112 +1280,19 @@ class BaaProductCrawler:
         print(f"[{category_name}] Hoàn tất tải ảnh: {success_count}/{total_images} thành công, " +
               f"{fail_count} thất bại, tốc độ: {images_per_second:.2f} ảnh/s")
         
-        return img_map
+        return img_map, image_report_data
 
     def _normalize_spec(self, spec_html):
         """
-        Nhận vào HTML bảng thông số kỹ thuật, trả về bảng 2 cột chuẩn hóa (Thông số - Giá trị), 
-        lấy đầy đủ kể cả phần bị ẩn, thêm Copyright cuối bảng
+        Chuyển đổi mã sản phẩm trong bảng thông số kỹ thuật thành chữ hoa.
         """
         if not spec_html:
-            return ''
-        try:
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(spec_html, 'html.parser')
-            rows = []
+            return spec_html
+        
+        # Tìm và chuyển đổi mã sản phẩm thành chữ hoa
+        soup = BeautifulSoup(spec_html, 'html.parser')
+        for td in soup.find_all('td'):
+            if td.text and any(keyword in td.text.lower() for keyword in ['mã', 'model', 'part no']):
+                td.string = td.text.upper()
             
-            # Xử lý HTML gốc để đảm bảo trích xuất được cả nội dung bị ẩn
-            # Tìm và kết hợp các nội dung bị ẩn trong morecontent
-            for more_content in soup.select('.morecontent span[style="display: none;"]'):
-                # Lấy nội dung bị ẩn
-                hidden_text = more_content.get_text(strip=True)
-                
-                # Tìm thẻ cha chứa cả phần hiển thị và phần bị ẩn
-                parent_container = more_content.find_parent()
-                if parent_container and parent_container.find_parent():
-                    parent_span = parent_container.find_parent()
-                    
-                    # Lấy text hiển thị (không bao gồm [...])
-                    visible_parts = []
-                    for child in parent_span.contents:
-                        if isinstance(child, str):
-                            visible_parts.append(child)
-                        elif child.name == 'span' and 'moreellipses' not in child.get('class', []) and 'morecontent' not in child.get('class', []):
-                            visible_parts.append(child.get_text())
-                    
-                    visible_text = ''.join(visible_parts).strip()
-                    
-                    # Tạo nội dung đầy đủ và thay thế trong HTML gốc
-                    full_text = visible_text + ' ' + hidden_text
-                    if parent_span.string:
-                        parent_span.string.replace_with(full_text)
-                    else:
-                        parent_span.clear()
-                        parent_span.append(full_text)
-            
-            # Tìm tất cả các hàng trong bảng
-            for tr in soup.select('tr'):
-                tds = tr.find_all(['td', 'th'])
-                if len(tds) >= 2:
-                    # Lấy tên thông số từ cột đầu tiên
-                    param = tds[0].get_text(" ", strip=True)
-                    
-                    # Xử lý giá trị từ cột thứ hai
-                    value_td = tds[1]
-                    
-                    # Xử lý trường hợp có nhiều dạng hiển thị khác nhau
-                    # Cách 1: Nếu đã xử lý ở trên
-                    visible_text = value_td.get_text(" ", strip=True)
-                    visible_text = visible_text.replace('[...]', '').strip()
-                    
-                    # Cách 2: Trường hợp đặc biệt với moreellipses và morecontent
-                    if not visible_text or '[...]' in visible_text:
-                        # Tìm tất cả text, bao gồm cả hidden text
-                        all_text_parts = []
-                        
-                        # Lấy text hiển thị (loại bỏ moreellipses)
-                        for child in value_td.contents:
-                            if isinstance(child, str):
-                                all_text_parts.append(child)
-                            elif child.name == 'span' and 'moreellipses' not in child.get('class', []):
-                                # Xử lý đặc biệt cho morecontent
-                                if 'morecontent' in child.get('class', []):
-                                    # Tìm span ẩn bên trong morecontent
-                                    hidden_span = child.select_one('span[style="display: none;"]')
-                                    if hidden_span:
-                                        all_text_parts.append(hidden_span.get_text(strip=True))
-                                else:
-                                    all_text_parts.append(child.get_text(strip=True))
-                        
-                        # Ghép lại thành text đầy đủ
-                        visible_text = ' '.join(all_text_parts).strip()
-                        visible_text = re.sub(r'\s+', ' ', visible_text)  # Loại bỏ khoảng trắng dư thừa
-                        visible_text = visible_text.replace('[...]', '').strip()
-                    
-                    # Xử lý trường hợp vẫn còn [...] trong text
-                    if '[...]' in visible_text:
-                        # Cố gắng tìm nội dung ẩn theo cấu trúc HTML
-                        hidden_parts = value_td.select('span[style="display: none;"]')
-                        hidden_texts = [hp.get_text(strip=True) for hp in hidden_parts]
-                        visible_text = visible_text.replace('[...]', ' ' + ' '.join(hidden_texts))
-                    
-                    # Làm sạch lại text cuối cùng
-                    visible_text = re.sub(r'\s+', ' ', visible_text).strip()
-                    
-                    # Thêm vào danh sách hàng đã xử lý
-                    rows.append((param, visible_text))
-            
-            # Thêm dòng Copyright vào cuối bảng
-            rows.append(("Copyright", "Haiphongtech.vn"))
-            
-            # Tạo HTML table chuẩn
-            html = '<table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; font-family: Arial;"><thead><tr><th>Thông số</th><th>Giá trị</th></tr></thead><tbody>'
-            for param, value in rows:
-                html += f'<tr><td>{param}</td><td>{value}</td></tr>'
-            html += '</tbody></table>'
-            
-            return html
-        except Exception as e:
-            print(f"Lỗi khi chuẩn hóa thông số: {str(e)}")
-            traceback.print_exc()
-            return spec_html 
+        return str(soup) 

@@ -82,7 +82,7 @@ def is_product_url(url):
             if len(parts) > 1 and parts[1].strip():
                 # Kiểm tra phần sau /san-pham/ có chứa nội dung hợp lệ
                 product_part = parts[1].strip('/')
-                if product_part and len(product_part) > 3:  # Ít nhất 3 ký tự
+                if product_part and len(product_part) > 3:
                     print(f"  ✓ URL sản phẩm hợp lệ (pattern /san-pham/): {url}")
                     return True
     
@@ -148,7 +148,7 @@ def is_category_url(url):
         # Kiểm tra thêm để đảm bảo không phải sản phẩm
         if not any(product_keyword in path for product_keyword in ['/san-pham/', '/product/']):
             print(f"  ✓ URL danh mục hợp lệ (pattern /vn/name_id): {url}")
-            return True
+        return True
 
     # Xử lý riêng cho URL đèn tháp LED
     led_tower_url = "den-thap-led-sang-tinh-chop-nhay-d45mm-qlight-st45l-and-st45ml-series_4779"
@@ -806,7 +806,7 @@ def extract_product_urls(url):
                             full_url = f"{parsed_url.scheme}://{parsed_url.netloc}{href}" if href.startswith('/') else f"{page_url.rstrip('/')}/{href}"
                         else:
                             full_url = href
-                        
+                                        
                         # Kiểm tra xem có phải URL sản phẩm hợp lệ không
                         if is_product_url(full_url) and full_url not in local_product_urls:
                             local_product_urls.append(full_url)
@@ -2531,30 +2531,19 @@ def extract_product_code_from_url(url):
 
 def standardize_product_code(code):
     """
-    Chuẩn hóa mã sản phẩm để tạo tên file an toàn trên tất cả hệ điều hành
+    Chuyển mã sản phẩm thành chữ hoa.
+    
+    Args:
+        code (str): Mã sản phẩm cần chuyển đổi
+        
+    Returns:
+        str: Mã sản phẩm đã được chuyển thành chữ hoa
     """
-    if not code:
-        return "unknown_product"
-    
-    # Chuyển đổi tất cả về chữ hoa và loại bỏ khoảng trắng ở đầu/cuối
-    standardized = str(code).upper().strip()
-    
-    # Thay thế các ký tự không hợp lệ cho tên file Windows
-    invalid_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|', ' ', ',', '.', ';', '&', '%', '$', '@', '!', '=', '+', '~', '`']
-    for char in invalid_chars:
-        standardized = standardized.replace(char, '-')
-    
-    # Thay thế nhiều dấu gạch ngang liên tiếp thành một dấu gạch ngang
-    standardized = re.sub(r'-+', '-', standardized)
-    
-    # Loại bỏ dấu gạch ngang ở đầu và cuối nếu có
-    standardized = standardized.strip('-')
-    
-    # Đảm bảo tên file không rỗng
-    if not standardized:
-        return "unknown_product"
-    
-    return standardized
+    if not code or pd.isna(code):
+        return ''
+        
+    # Chuyển thành chuỗi và viết hoa
+    return str(code).upper()
 
 def get_random_headers():
     """Tạo các header ngẫu nhiên để tránh bị chặn"""
@@ -3026,9 +3015,9 @@ def download_baa_product_images_fixed(product_urls, output_folder=None, create_r
                                 img_url = re.sub(pattern, f'/{type_folder}/{folder_id}/800/', img_url)
                                 if len(product_urls) == 1:
                                     print(f"  ✓ Chuyển đổi ảnh từ og:image sang kích thước 800px: {img_url}")
-                            else:
-                                if len(product_urls) == 1:
-                                    print(f"  ✓ Tìm thấy ảnh từ og:image: {img_url}")
+                        else:
+                            if len(product_urls) == 1:
+                                print(f"  ✓ Tìm thấy ảnh từ og:image: {img_url}")
                 
                 # Nếu không tìm thấy ảnh nào, thông báo thất bại
                 if not img_url:
@@ -3094,7 +3083,7 @@ def download_baa_product_images_fixed(product_urls, output_folder=None, create_r
                     
                     if len(product_urls) == 1:
                         print(f"  ✓ Đã lưu: {img_filename} ({img_size})")
-                        
+                    
                 except requests.exceptions.HTTPError as e:
                     # Nếu lỗi 404 với ảnh 800px, thử với 300px
                     if '404' in str(e) and '800' in img_url:
@@ -3166,7 +3155,7 @@ def download_baa_product_images_fixed(product_urls, output_folder=None, create_r
                     results['report_data'].append(report_item)
                 if len(product_urls) == 1:
                     print(f"Lỗi khi xử lý URL {url}: {str(e)}")
-                    traceback.print_exc()
+                traceback.print_exc()
                 return report_item
         
         # Xử lý đa luồng
@@ -3201,45 +3190,45 @@ def download_baa_product_images_fixed(product_urls, output_folder=None, create_r
                     # Lấy workbook và worksheet
                     workbook = writer.book
                     sheet = writer.sheets['Báo cáo tải ảnh']
-                    
-                    # Định dạng các cột
-                    for idx, col in enumerate(df.columns, 1):
-                        # Đặt độ rộng cột
-                        column_letter = openpyxl.utils.get_column_letter(idx)
-                        if col == 'URL' or col == 'Đường dẫn ảnh':
-                            sheet.column_dimensions[column_letter].width = 50
-                        elif col == 'Lý do lỗi':
-                            sheet.column_dimensions[column_letter].width = 30
-                        else:
-                            sheet.column_dimensions[column_letter].width = 20
-                            
-                        # Định dạng tiêu đề
-                        header_cell = sheet.cell(row=1, column=idx)
-                        header_cell.font = openpyxl.styles.Font(bold=True)
-                        header_cell.alignment = openpyxl.styles.Alignment(horizontal='center')
-                    
-                    # Tạo bảng tóm tắt
-                    summary_row = sheet.max_row + 3
-                    sheet.cell(row=summary_row, column=1).value = "Tổng số URL:"
-                    sheet.cell(row=summary_row, column=2).value = results['total']
-                    
-                    sheet.cell(row=summary_row+1, column=1).value = "Tải thành công:"
-                    sheet.cell(row=summary_row+1, column=2).value = results['success']
-                    
-                    sheet.cell(row=summary_row+2, column=1).value = "Tải thất bại:"
-                    sheet.cell(row=summary_row+2, column=2).value = results['failed']
-                    
-                    sheet.cell(row=summary_row+3, column=1).value = "Tổng số ảnh đã tải:"
-                    sheet.cell(row=summary_row+3, column=2).value = len(results['image_paths'])
-                    
-                    # Đặt độ rộng cho cột
-                    sheet.column_dimensions['A'].width = 20
-                    sheet.column_dimensions['B'].width = 10
-                    
-                    # In đậm tiêu đề tóm tắt
-                    for i in range(4):
-                        cell = sheet.cell(row=summary_row+i, column=1)
-                        cell.font = openpyxl.styles.Font(bold=True)
+                
+                # Định dạng các cột
+                for idx, col in enumerate(df.columns, 1):
+                    # Đặt độ rộng cột
+                    column_letter = openpyxl.utils.get_column_letter(idx)
+                    if col == 'URL' or col == 'Đường dẫn ảnh':
+                        sheet.column_dimensions[column_letter].width = 50
+                    elif col == 'Lý do lỗi':
+                        sheet.column_dimensions[column_letter].width = 30
+                    else:
+                        sheet.column_dimensions[column_letter].width = 20
+                        
+                    # Định dạng tiêu đề
+                    header_cell = sheet.cell(row=1, column=idx)
+                    header_cell.font = openpyxl.styles.Font(bold=True)
+                    header_cell.alignment = openpyxl.styles.Alignment(horizontal='center')
+                
+                # Tạo bảng tóm tắt
+                summary_row = sheet.max_row + 3
+                sheet.cell(row=summary_row, column=1).value = "Tổng số URL:"
+                sheet.cell(row=summary_row, column=2).value = results['total']
+                
+                sheet.cell(row=summary_row+1, column=1).value = "Tải thành công:"
+                sheet.cell(row=summary_row+1, column=2).value = results['success']
+                
+                sheet.cell(row=summary_row+2, column=1).value = "Tải thất bại:"
+                sheet.cell(row=summary_row+2, column=2).value = results['failed']
+                
+                sheet.cell(row=summary_row+3, column=1).value = "Tổng số ảnh đã tải:"
+                sheet.cell(row=summary_row+3, column=2).value = len(results['image_paths'])
+                
+                # Đặt độ rộng cho cột
+                sheet.column_dimensions['A'].width = 20
+                sheet.column_dimensions['B'].width = 10
+                
+                # In đậm tiêu đề tóm tắt
+                for i in range(4):
+                    cell = sheet.cell(row=summary_row+i, column=1)
+                    cell.font = openpyxl.styles.Font(bold=True)
                 
                 # Thêm đường dẫn file báo cáo vào kết quả
                 results['report_file'] = report_path

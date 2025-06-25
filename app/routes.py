@@ -1062,25 +1062,45 @@ def compare_categories():
 @main_bp.route('/compare-product-codes', methods=['POST'])
 def compare_product_codes():
     try:
-        # Kiểm tra các file đã tải lên
-        if 'excel_file_1' not in request.files or 'excel_file_2' not in request.files:
-            return render_template('index.html', error="Vui lòng tải lên cả hai file Excel chứa danh sách mã sản phẩm")
+        # Kiểm tra file đầu tiên (HPT)
+        if 'excel_file_1' not in request.files:
+            return render_template('index.html', error="Vui lòng tải lên file Excel HPT")
         
         excel_file_1 = request.files['excel_file_1']
-        excel_file_2 = request.files['excel_file_2']
         
-        if excel_file_1.filename == '' or excel_file_2.filename == '':
-            return render_template('index.html', error="Không có file nào được chọn")
+        if excel_file_1.filename == '':
+            return render_template('index.html', error="Không có file HPT nào được chọn")
+        
+        # Kiểm tra các file thứ hai
+        excel_files_2 = request.files.getlist('excel_file_2')
+        
+        if not excel_files_2 or all(f.filename == '' for f in excel_files_2):
+            return render_template('index.html', error="Vui lòng tải lên ít nhất một file Excel thứ hai")
+        
+        # Loại bỏ các file trống
+        excel_files_2 = [f for f in excel_files_2 if f.filename != '']
+        
+        if not excel_files_2:
+            return render_template('index.html', error="Không có file Excel thứ hai nào được chọn")
         
         allowed_extensions = set(['xlsx', 'xls', 'csv'])
-        if not (excel_file_1.filename.rsplit('.', 1)[1].lower() in allowed_extensions and 
-                excel_file_2.filename.rsplit('.', 1)[1].lower() in allowed_extensions):
-            return render_template('index.html', error="Chỉ chấp nhận file .xlsx, .xls hoặc .csv")
+        
+        # Kiểm tra file HPT
+        if not excel_file_1.filename.rsplit('.', 1)[1].lower() in allowed_extensions:
+            return render_template('index.html', error="File HPT phải có định dạng .xlsx, .xls hoặc .csv")
+        
+        # Kiểm tra các file thứ hai
+        for excel_file in excel_files_2:
+            if not excel_file.filename.rsplit('.', 1)[1].lower() in allowed_extensions:
+                return render_template('index.html', error=f"File {excel_file.filename} phải có định dạng .xlsx, .xls hoặc .csv")
+        
+        # Kiểm tra tùy chọn phân loại danh mục
+        categorize_results = 'categorize_results' in request.form
         
         # Thông báo tiến trình
         socketio.emit('progress_update', {
             'percent': 10, 
-            'message': 'Đang đọc dữ liệu từ các file Excel...'
+            'message': f'Đang đọc dữ liệu từ {1 + len(excel_files_2)} file Excel...'
         })
         
         # Lưu các file tạm thời
@@ -1088,14 +1108,17 @@ def compare_product_codes():
         os.makedirs(temp_dir, exist_ok=True)
         
         file1_path = os.path.join(temp_dir, secure_filename(excel_file_1.filename))
-        file2_path = os.path.join(temp_dir, secure_filename(excel_file_2.filename))
-        
         excel_file_1.save(file1_path)
-        excel_file_2.save(file2_path)
+        
+        file2_paths = []
+        for i, excel_file in enumerate(excel_files_2):
+            file2_path = os.path.join(temp_dir, secure_filename(excel_file.filename))
+            excel_file.save(file2_path)
+            file2_paths.append(file2_path)
         
         socketio.emit('progress_update', {
             'percent': 30, 
-            'message': 'Đang so sánh mã sản phẩm giữa hai file...'
+            'message': f'Đang so sánh mã sản phẩm giữa file HPT và {len(file2_paths)} file khác...'
         })
         
         # Gọi hàm so sánh từ module product_comparison
@@ -1103,7 +1126,8 @@ def compare_product_codes():
         output_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], 'reports')
         os.makedirs(output_dir, exist_ok=True)
         
-        report_path = compare_product_codes(file1_path, file2_path, output_dir)
+        # Truyền danh sách file2_paths vào hàm so sánh
+        report_path = compare_product_codes(file1_path, file2_paths, output_dir, categorize_results)
         
         if report_path and isinstance(report_path, str) and os.path.exists(report_path):
             socketio.emit('progress_update', {
@@ -1115,8 +1139,12 @@ def compare_product_codes():
             report_filename = os.path.basename(report_path)
             download_url = url_for('main.download_file', filename=f'reports/{report_filename}')
             
+            success_message = f"Đã so sánh xong mã sản phẩm từ file HPT với {len(file2_paths)} file khác!"
+            if categorize_results:
+                success_message += " Kết quả đã được phân loại theo danh mục sản phẩm."
+            
             return render_template('index.html', 
-                                 success_message=f"Đã so sánh xong mã sản phẩm từ hai file Excel!",
+                                 success_message=success_message,
                                  download_url=download_url)
         else:
             error_msg = "Có lỗi xảy ra khi so sánh mã sản phẩm"
@@ -3075,3 +3103,79 @@ def debug_extract_products():
             'error': f'Lỗi khi debug: {str(e)}',
             'details': error_details
         }), 500
+
+@main_bp.route('/download-baa-result/<filename>')
+def download_baa_result(filename):
+    """Tải xuống file kết quả từ BAA crawler với thông tin chi tiết"""
+    try:
+        # Lấy đường dẫn file từ thư mục output_baa
+        baa_output_dir = os.path.join(os.getcwd(), "output_baa")
+        file_path = os.path.join(baa_output_dir, filename)
+        
+        # Kiểm tra file tồn tại
+        if not os.path.exists(file_path):
+            flash('File không tồn tại hoặc đã bị xóa', 'error')
+            return redirect(url_for('main.index'))
+        
+        return send_file(file_path, as_attachment=True, download_name=filename)
+        
+    except Exception as e:
+        print(f"Lỗi khi tải file: {str(e)}")
+        flash(f'Lỗi khi tải file: {str(e)}', 'error')
+        return redirect(url_for('main.index'))
+
+@main_bp.route('/crawl-baa-old', methods=['POST'])
+def crawl_baa_old():
+    try:
+        # Lấy thông tin từ form
+        category_urls = request.form.get('category_urls', '').strip()
+        if not category_urls:
+            flash('Vui lòng nhập ít nhất một URL danh mục hoặc sản phẩm.', 'error')
+            return redirect(url_for('main.index'))
+        
+        # Lấy tham số tùy chọn
+        max_workers = int(request.form.get('max_workers', 8))
+        max_retries = int(request.form.get('max_retries', 3))
+        
+        # Giới hạn giá trị hợp lệ
+        max_workers = min(max(1, max_workers), 16)  # Từ 1-16 luồng
+        max_retries = min(max(1, max_retries), 5)   # Từ 1-5 lần thử lại
+        
+        # Log thông tin
+        print(f"Bắt đầu cào dữ liệu với {max_workers} luồng, {max_retries} lần thử lại")
+        
+        url_list = [u.strip() for u in category_urls.splitlines() if u.strip()]
+        crawler = BaaProductCrawler(output_root=current_app.config['UPLOAD_FOLDER'], 
+                                   max_workers=max_workers, 
+                                   max_retries=max_retries)
+        products, result_dir = crawler.crawl_products(url_list)
+        
+        # Nén kết quả và trả về link download
+        zip_path = result_dir + '.zip'
+        if os.path.exists(zip_path):
+            download_url = url_for('main.download_file', filename=os.path.basename(zip_path))
+            flash(f'Đã cào xong dữ liệu {len(products)} sản phẩm. <a href="{download_url}" class="btn btn-primary mt-2">Tải xuống kết quả</a>', 'success')
+            
+            # Tạo dữ liệu để hiển thị trên giao diện
+            zip_size = os.path.getsize(zip_path) / (1024 * 1024)  # Kích thước MB
+            products_count = len(products)
+            stats = {
+                'Tổng sản phẩm': products_count,
+                'Thời gian xử lý': f"{os.path.basename(result_dir).split('_')[-1]} giây",
+                'Kích thước file': f"{zip_size:.2f} MB"
+            }
+            
+            # Trả về trang kết quả với đường dẫn tải xuống và thống kê
+            return render_template('crawler_result.html', 
+                                  download_url=download_url,
+                                  zip_filename=os.path.basename(zip_path),
+                                  stats=stats,
+                                  products_count=products_count)
+        else:
+            flash(f'Đã cào xong dữ liệu {len(products)} sản phẩm nhưng không tạo được file ZIP.', 'warning')
+            return redirect(url_for('main.index'))
+    
+    except Exception as e:
+        traceback.print_exc()
+        flash(f'Lỗi: {str(e)}', 'error')
+        return redirect(url_for('main.index'))

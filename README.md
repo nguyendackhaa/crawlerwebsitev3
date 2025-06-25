@@ -69,8 +69,9 @@ pip install -r requirements.txt
 
 1. Khởi động ứng dụng:
 
-```
 cd CrawlerWebsitev2; python -m flask run
+
+
 ```
 
 2. Mở trình duyệt và truy cập: `http://localhost:5000`
@@ -85,23 +86,27 @@ cd CrawlerWebsitev2; python -m flask run
 
    - Mỗi URL trên một dòng, ví dụ:
 
-   ```
-   https://baa.vn/vn/Category/cam-bien-quang-dien-autonics_47_378/
-   https://baa.vn/vn/Category/cam-bien-anh-sang_47_389/
-   ```
+```
+
+https://baa.vn/vn/Category/cam-bien-quang-dien-autonics_47_378/
+https://baa.vn/vn/Category/cam-bien-anh-sang_47_389/
+
+```
 
 2. **File danh sách URL sản phẩm** (txt):
 
-   - Mỗi URL trên một dòng, ví dụ:
+- Mỗi URL trên một dòng, ví dụ:
 
-   ```
-   https://baa.vn/vn/product/cam-bien-quang-autonics-bx5m-mfr_1325639/
-   https://baa.vn/vn/product/cam-bien-quang-autonics-bup-30_1325634/
-   ```
+```
+
+https://baa.vn/vn/product/cam-bien-quang-autonics-bx5m-mfr_1325639/
+https://baa.vn/vn/product/cam-bien-quang-autonics-bup-30_1325634/
+
+```
 
 3. **File Excel mẫu**:
-   - File Excel với các cột tương ứng với thông tin cần thu thập
-   - Ví dụ: `Mã sản phẩm`, `Tên sản phẩm`, `Giá`, `Khoảng cách phát hiện`, `Nguồn cấp`, v.v.
+- File Excel với các cột tương ứng với thông tin cần thu thập
+- Ví dụ: `Mã sản phẩm`, `Tên sản phẩm`, `Giá`, `Khoảng cách phát hiện`, `Nguồn cấp`, v.v.
 
 ## Lưu ý
 
@@ -109,3 +114,4 @@ cd CrawlerWebsitev2; python -m flask run
 - Nên sử dụng VPN hoặc proxy nếu thu thập một lượng lớn dữ liệu để tránh bị chặn
 - Một số website có biện pháp chống thu thập dữ liệu tự động, hiệu quả có thể bị hạn chế
 - LH : 0355108736 để biết thêm chi tiết
+```

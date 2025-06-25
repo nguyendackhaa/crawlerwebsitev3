@@ -587,7 +587,7 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                             <div class="col-md-6">
                                 <label for="excel_file_1" class="file-input-label">
                                     <i class="bi bi-file-earmark-excel fs-3"></i>
-                                        <div class="mt-2">File Excel thứ nhất</div>
+                                        <div class="mt-2">File Excel HPT</div>
                                     <span>Chỉ chấp nhận file .xlsx, .xls, .csv</span>
                                         <input type="file" id="excel_file_1" name="excel_file_1" class="d-none" accept=".xlsx, .xls, .csv" onchange="updateFileName(this, 'excel_file_1_name')">
                                 </label>
@@ -595,12 +595,23 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                             </div>
                             <div class="col-md-6">
                                 <label for="excel_file_2" class="file-input-label">
-                                    <i class="bi bi-file-earmark-excel fs-3"></i>
-                                        <div class="mt-2">File Excel thứ hai</div>
-                                    <span>Chỉ chấp nhận file .xlsx, .xls, .csv</span>
-                                        <input type="file" id="excel_file_2" name="excel_file_2" class="d-none" accept=".xlsx, .xls, .csv" onchange="updateFileName(this, 'excel_file_2_name')">
+                                    <i class="bi bi-files fs-3"></i>
+                                        <div class="mt-2">Các file Excel cần so sánh</div>
+                                    <span>Chọn một hoặc nhiều file .xlsx, .xls, .csv</span>
+                                        <input type="file" id="excel_file_2" name="excel_file_2" class="d-none" accept=".xlsx, .xls, .csv" multiple onchange="updateMultipleFileNames(this, 'excel_file_2_names')">
                                 </label>
-                                <div id="excel_file_2_name" class="mb-3 text-muted"></div>
+                                <div id="excel_file_2_names" class="mb-3 text-muted"></div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="categorize_results" name="categorize_results">
+                                <label class="form-check-label" for="categorize_results">
+                                    <i class="bi bi-folder-symlink"></i> Phân loại kết quả theo danh mục sản phẩm (Cảm biến, Thị giác máy, v.v...)
+                                </label>
+                                <div class="form-text">
+                                    Tùy chọn này sẽ tạo các sheet riêng cho từng danh mục sản phẩm, giúp dễ dàng quản lý và sắp xếp
+                                </div>
                             </div>
                         </div>
                         <button type="submit" class="btn btn-primary w-100">So sánh mã sản phẩm</button>
@@ -1231,6 +1242,28 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
             const output = document.getElementById(outputId);
             if (input.files && input.files.length > 0) {
                 output.textContent = "Đã chọn: " + input.files.length + " file";
+            } else {
+                output.textContent = "";
+            }
+        }
+        
+        function updateMultipleFileNames(input, outputId) {
+            const output = document.getElementById(outputId);
+            if (input.files && input.files.length > 0) {
+                let fileList = "";
+                if (input.files.length <= 5) {
+                    // Hiển thị tất cả tên file nếu ít hơn 5 file
+                    for (let i = 0; i < input.files.length; i++) {
+                        fileList += (i + 1) + ". " + input.files[i].name + "<br>";
+                    }
+                } else {
+                    // Hiển thị 3 file đầu tiên và thông báo số file còn lại
+                    for (let i = 0; i < 3; i++) {
+                        fileList += (i + 1) + ". " + input.files[i].name + "<br>";
+                    }
+                    fileList += "... và " + (input.files.length - 3) + " file khác";
+                }
+                output.innerHTML = "<strong>Đã chọn " + input.files.length + " file:</strong><br>" + fileList;
             } else {
                 output.textContent = "";
             }

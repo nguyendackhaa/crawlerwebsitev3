@@ -4,6 +4,7 @@ import os
 from urllib.parse import urlparse
 import zipfile
 import traceback
+import unicodedata
 
 def is_valid_url(url):
     """
@@ -77,30 +78,55 @@ def create_zip_from_folder(folder_path, zip_path):
         print(f"Chi tiết lỗi: {traceback.format_exc()}")
         return False 
 
+def slug(title: str, separator: str = '-', language: str = 'en', dictionary: dict = {'@': 'at'}) -> str:
+    def to_ascii(text: str, lang: str = 'en') -> str:
+        # Chuyển đổi chuỗi unicode sang ASCII (loại bỏ dấu tiếng Việt...)
+        text = unicodedata.normalize('NFKD', text)
+        return text.encode('ascii', 'ignore').decode('ascii')
+
+    def to_lower(text: str) -> str:
+        return text.lower()
+
+    if language:
+        title = to_ascii(title, language)
+
+    # Convert all dashes/underscores into separator
+    flip = '_' if separator == '-' else '-'
+    title = re.sub(f"[{re.escape(flip)}]+", separator, title)
+
+    # Replace dictionary words like '@' => 'at'
+    for key, val in dictionary.items():
+        title = title.replace(key, f"{separator}{val}{separator}")
+
+    # Remove all characters except letters, numbers, separators, and whitespace
+    title = to_lower(title)
+    title = re.sub(f"[^{re.escape(separator)}\w\s]", '', title, flags=re.UNICODE)
+
+    # Replace all whitespace or repeated separators with single separator
+    title = re.sub(f"[{re.escape(separator)}\s]+", separator, title)
+
+    return title.strip(separator)
+
 def standardize_filename(product_code):
     """
     Chuẩn hóa tên file từ mã sản phẩm.
-    Thay thế các ký tự không hợp lệ bằng dấu gạch ngang và loại bỏ các dấu gạch ngang trùng lặp.
+    Sử dụng hàm slug để chuẩn hóa tên file, loại bỏ dấu tiếng Việt và các ký tự đặc biệt.
+    Mặc định viết hoa tất cả các chữ cái.
     
     Args:
         product_code (str): Mã sản phẩm cần chuẩn hóa
         
     Returns:
-        str: Tên file đã được chuẩn hóa
+        str: Tên file đã được chuẩn hóa và viết hoa
     """
-    import re
+    # Sử dụng hàm slug để chuẩn hóa tên file
+    normalized = slug(product_code, separator='-', language='vi')
     
-    # Thay thế các ký tự không hợp lệ bằng dấu gạch ngang
-    invalid_chars = r'[\\/:*?"<>|,=\s]'
-    normalized = re.sub(invalid_chars, '-', product_code)
+    # Viết hoa tất cả các chữ cái
+    normalized = normalized.upper()
     
-    # Loại bỏ các dấu gạch ngang trùng lặp
-    normalized = re.sub(r'-+', '-', normalized)
-    
-    # Chỉ giữ lại chữ cái, số, dấu gạch ngang và gạch dưới
-    normalized = re.sub(r'[^a-zA-Z0-9\-_]', '', normalized)
-    
-    # Loại bỏ dấu gạch ngang ở đầu và cuối chuỗi
-    normalized = normalized.strip('-')
+    # Đảm bảo tên file không quá dài (giới hạn 255 ký tự)
+    if len(normalized) > 255:
+        normalized = normalized[:255]
     
     return normalized 
