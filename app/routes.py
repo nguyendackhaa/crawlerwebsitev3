@@ -15,6 +15,13 @@ import openpyxl
 import re
 import zipfile
 import shutil
+from app.progress_bar import (
+    TerminalProgressBar, 
+    progress_tracker, 
+    simple_progress, 
+    batch_progress, 
+    create_child_progress
+)
 from urllib.parse import urlparse
 import concurrent.futures
 from app.baa_crawler import BaaProductCrawler
@@ -35,41 +42,54 @@ def index():
     return render_template('index.html')
 
 @main_bp.route('/extract-links', methods=['POST'])
-def extract_links():
+@progress_tracker(name="Trích xuất liên kết sản phẩm", total_steps=100, verbose=True)
+def extract_links(progress: TerminalProgressBar):
     """
     Trích xuất liên kết sản phẩm từ file txt chứa danh sách URL danh mục
     """
-    if 'link_file' not in request.files:
-        flash('Không tìm thấy file!', 'error')
-        return redirect(url_for('main.index'))
-        
-    file = request.files['link_file']
-    
-    if file.filename == '':
-        flash('Không có file nào được chọn!', 'error')
-        return redirect(url_for('main.index'))
-        
-    if not allowed_file(file.filename, ALLOWED_EXTENSIONS_TXT):
-        flash('Chỉ cho phép file .txt!', 'error')
-        return redirect(url_for('main.index'))
-    
     try:
+        progress.update(5, "Kiểm tra file đầu vào")
+        
+        if 'link_file' not in request.files:
+            progress.error("Không tìm thấy file!")
+            flash('Không tìm thấy file!', 'error')
+            return redirect(url_for('main.index'))
+            
+        file = request.files['link_file']
+        
+        if file.filename == '':
+            progress.error("Không có file nào được chọn!")
+            flash('Không có file nào được chọn!', 'error')
+            return redirect(url_for('main.index'))
+            
+        if not allowed_file(file.filename, ALLOWED_EXTENSIONS_TXT):
+            progress.error("Chỉ cho phép file .txt!")
+            flash('Chỉ cho phép file .txt!', 'error')
+            return redirect(url_for('main.index'))
+        
         # Đọc nội dung file
+        progress.update(10, "Đang đọc nội dung file", f"File: {file.filename}")
         content = file.read().decode('utf-8')
         
         # Tách thành danh sách URL, bỏ qua dòng trống
         raw_urls = content.strip().split('\n')
         urls = [url.strip() for url in raw_urls if url.strip()]
         
+        progress.update(20, "Đang kiểm tra tính hợp lệ của URLs", f"Tìm thấy {len(urls)} URLs")
+        
         # Lọc các URL hợp lệ
         valid_urls = []
         invalid_urls = []
         
-        # Gửi thông báo bắt đầu
-        socketio.emit('progress_update', {'percent': 0, 'message': 'Đang kiểm tra URL...'})
+        # Gửi thông báo bắt đầu (kết hợp với socketio)
+        socketio.emit('progress_update', {'percent': 20, 'message': 'Đang kiểm tra URL...'})
         
-        # Kiểm tra các URL
-        for url in urls:
+        # Kiểm tra các URL với progress bar con
+        url_check_progress = create_child_progress(progress, "Kiểm tra URLs", len(urls))
+        
+        for i, url in enumerate(urls):
+            url_check_progress.update(i+1, f"Đang kiểm tra URL {i+1}/{len(urls)}")
+            
             # Kiểm tra URL đặc biệt của đèn tháp LED
             is_led_url = 'den-thap-led-sang-tinh-chop-nhay-d45mm-qlight-st45l-and-st45ml-series_4779' in url
             
@@ -78,22 +98,40 @@ def extract_links():
             else:
                 invalid_urls.append(url)
         
+        url_check_progress.complete("success", f"Đã kiểm tra {len(urls)} URLs", {
+            "URLs hợp lệ": len(valid_urls),
+            "URLs không hợp lệ": len(invalid_urls)
+        })
+        
         if not valid_urls:
+            progress.error('Không có URL danh mục hợp lệ trong file!')
             flash('Không có URL danh mục hợp lệ trong file!', 'error')
             return redirect(url_for('main.index'))
             
+        progress.update(40, f"Tìm thấy {len(valid_urls)} URL danh mục hợp lệ", f"Bỏ qua {len(invalid_urls)} URL không hợp lệ")
+            
         # Gửi thông báo cập nhật
-        socketio.emit('progress_update', {'percent': 10, 'message': f'Đã tìm thấy {len(valid_urls)} URL danh mục hợp lệ'})
+        socketio.emit('progress_update', {'percent': 40, 'message': f'Đã tìm thấy {len(valid_urls)} URL danh mục hợp lệ'})
         
         # Trích xuất liên kết sản phẩm từ các URL danh mục
+        progress.update(50, "Đang trích xuất liên kết sản phẩm từ các danh mục")
+        extract_progress = create_child_progress(progress, "Trích xuất sản phẩm", len(valid_urls))
+        
         product_links = extract_category_links(valid_urls)
         
+        extract_progress.complete("success", f"Trích xuất hoàn tất", {
+            "Sản phẩm tìm thấy": len(product_links)
+        })
+        
         if not product_links:
+            progress.error('Không tìm thấy liên kết sản phẩm nào!')
             flash('Không tìm thấy liên kết sản phẩm nào!', 'error')
             return redirect(url_for('main.index'))
             
+        progress.update(80, f"Đã trích xuất {len(product_links)} liên kết sản phẩm", "Đang tạo file kết quả")
+            
         # Gửi thông báo hoàn thành trích xuất liên kết
-        socketio.emit('progress_update', {'percent': 90, 'message': f'Đã trích xuất xong {len(product_links)} liên kết sản phẩm'})
+        socketio.emit('progress_update', {'percent': 80, 'message': f'Đã trích xuất xong {len(product_links)} liên kết sản phẩm'})
         
         # Tạo file kết quả
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -104,6 +142,8 @@ def extract_links():
         with open(result_file_path, 'w', encoding='utf-8') as f:
             for link in product_links:
                 f.write(link + '\n')
+        
+        progress.update(95, "Đang tạo đường dẫn tải xuống")
         
         # Tạo đường dẫn download
         download_url = url_for('main.download_file', filename=result_filename)
@@ -118,6 +158,16 @@ def extract_links():
         # Gửi thông báo hoàn thành
         socketio.emit('progress_update', {'percent': 100, 'message': 'Hoàn thành!'})
         
+        # Hoàn thành progress với thống kê chi tiết
+        progress.complete("success", "Trích xuất liên kết hoàn tất", {
+            "File đầu vào": file.filename,
+            "URLs đầu vào": len(urls),
+            "URLs hợp lệ": len(valid_urls),
+            "URLs không hợp lệ": len(invalid_urls),
+            "Sản phẩm tìm thấy": len(product_links),
+            "File kết quả": result_filename
+        })
+        
         # Hiển thị trang kết quả
         return render_template('index.html', download_url=download_url)
         
@@ -125,6 +175,7 @@ def extract_links():
         error_message = str(e)
         # In chi tiết lỗi
         traceback.print_exc()
+        progress.error(f'Lỗi: {error_message}', traceback.format_exc())
         flash(f'Lỗi: {error_message}', 'error')
         return redirect(url_for('main.index'))
 
@@ -529,21 +580,29 @@ def convert_to_webp():
         return render_template('index.html', error=error_msg)
 
 @main_bp.route('/download-images', methods=['POST'])
-def download_images():
+@progress_tracker(name="Tải ảnh sản phẩm", total_steps=100, verbose=True)
+def download_images(progress: TerminalProgressBar):
     try:
         # Đặt thời gian bắt đầu
         start_time = time.time()
         
+        progress.update(5, "Kiểm tra file đầu vào")
+        
         if 'product_code_file' not in request.files:
+            progress.error("Không tìm thấy file")
             return render_template('index.html', error="Không tìm thấy file")
         
         file = request.files['product_code_file']
         
         if file.filename == '':
+            progress.error("Không có file nào được chọn")
             return render_template('index.html', error="Không có file nào được chọn")
         
         if not allowed_file(file.filename, ALLOWED_EXTENSIONS_TXT):
+            progress.error("Chỉ chấp nhận file .txt")
             return render_template('index.html', error="Chỉ chấp nhận file .txt")
+        
+        progress.update(10, "Đang đọc danh sách mã sản phẩm", f"File: {file.filename}")
         
         # Đọc file txt chứa danh sách mã sản phẩm
         product_codes = []
@@ -554,7 +613,10 @@ def download_images():
                 product_codes.append(line)
         
         if not product_codes:
+            progress.error("Không tìm thấy mã sản phẩm hợp lệ trong file")
             return render_template('index.html', error="Không tìm thấy mã sản phẩm hợp lệ trong file")
+        
+        progress.update(15, f"Đã đọc {len(product_codes)} mã sản phẩm", "Đang tạo thư mục lưu ảnh")
         
         # Tạo thư mục đầu ra cho hình ảnh
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -562,27 +624,46 @@ def download_images():
         os.makedirs(images_folder, exist_ok=True)
         print(f"Đã tạo thư mục lưu ảnh: {images_folder}")
         
-        # Gửi thông báo bắt đầu
+        # Gửi thông báo bắt đầu (kết hợp với socketio)
         socketio.emit('progress_update', {
-            'percent': 5, 
+            'percent': 20, 
             'message': f'Chuẩn bị tải {len(product_codes)} hình ảnh sản phẩm Autonics'
         })
+        
+        progress.update(20, "Đang bắt đầu tải ảnh sản phẩm", f"Đích: {images_folder}")
+        
+        # Tạo progress bar con cho việc tải ảnh
+        download_progress = create_child_progress(progress, "Download Autonics Images", 60)
         
         # Tải ảnh sản phẩm với giới hạn thời gian
         summary = download_autonics_images(product_codes, images_folder)
         
+        download_progress.complete("success", "Tải ảnh hoàn tất", {
+            "Thành công": summary['successful'],
+            "Thất bại": summary['total'] - summary['successful'],
+            "Tổng cộng": summary['total']
+        })
+        
         if summary['successful'] == 0:
             elapsed_time = time.time() - start_time
             print(f"Quá trình xử lý thất bại sau {elapsed_time:.2f} giây")
+            progress.error("Không tải được ảnh nào")
             return render_template('index.html', error="Không tải được ảnh nào")
+        
+        progress.update(85, f"Đã tải {summary['successful']}/{summary['total']} ảnh", "Đang tạo file ZIP")
         
         # Tạo đường dẫn cho file zip
         zip_filename = f'product_images_{timestamp}.zip'
         zip_path = os.path.join(current_app.config['UPLOAD_FOLDER'], zip_filename)
         print(f"Bắt đầu tạo file ZIP: {zip_path}")
         
+        # Tạo progress bar con cho việc tạo ZIP
+        zip_progress = create_child_progress(progress, "Tạo file ZIP", 10)
+        
         # Tạo file zip từ thư mục ảnh
         if utils.create_zip_from_folder(images_folder, zip_path):
+            zip_progress.complete("success", "Đã tạo file ZIP thành công")
+            
             print(f"Đã tạo file ZIP thành công: {zip_path}")
             success_message = f"Đã tải thành công {summary['successful']}/{summary['total']} ảnh sản phẩm."
             
@@ -601,14 +682,28 @@ def download_images():
             else:
                 success_message += f" Tốc độ xử lý: {avg_time:.2f} giây/sản phẩm (cần cải thiện)."
             
+            # Hoàn thành progress với thống kê chi tiết
+            progress.complete("success", "Tải ảnh sản phẩm hoàn tất", {
+                "File đầu vào": file.filename,
+                "Mã sản phẩm": len(product_codes),
+                "Ảnh thành công": summary['successful'],
+                "Ảnh thất bại": summary['total'] - summary['successful'],
+                "Thời gian xử lý": f"{elapsed_time:.2f}s",
+                "Tốc độ TB": f"{avg_time:.2f}s/sản phẩm",
+                "File ZIP": zip_filename
+            })
+            
             return render_template('index.html', download_url=download_url, success_message=success_message)
         else:
+            zip_progress.error("Không thể tạo file ZIP")
+            progress.error("Không thể tạo file ZIP từ ảnh đã tải")
             return render_template('index.html', error="Không thể tạo file ZIP từ ảnh đã tải")
     
     except Exception as e:
         error_msg = f"Lỗi khi xử lý: {str(e)}"
         print(error_msg)
         print(traceback.format_exc())
+        progress.error(f'Lỗi: {error_msg}', traceback.format_exc())
         socketio.emit('progress_update', {'percent': 0, 'message': f'Đã xảy ra lỗi: {str(e)}'})
         return render_template('index.html', error=error_msg)
 
@@ -1361,21 +1456,28 @@ def view_baa_images(folder):
         return redirect(url_for('main.index'))
 
 @main_bp.route('/filter-products', methods=['POST'])
-def filter_products():
+@progress_tracker(name="Lọc sản phẩm", total_steps=100, verbose=True)
+def filter_products(progress: TerminalProgressBar):
     """
     Lọc danh sách mã sản phẩm từ file Excel dựa trên danh sách mã cần xóa
     """
     try:
+        progress.update(5, "Kiểm tra thông tin đầu vào")
+        
         # Kiểm tra nếu có cả danh sách mã và file Excel
         if 'product_codes' not in request.form or 'excel_file' not in request.files:
+            progress.error('Vui lòng nhập danh sách mã sản phẩm và tải lên file Excel!')
             flash('Vui lòng nhập danh sách mã sản phẩm và tải lên file Excel!', 'error')
             return redirect(url_for('main.index', _anchor='filter-products-tab'))
         
         # Lấy danh sách mã sản phẩm từ form
         product_codes_text = request.form['product_codes']
         if not product_codes_text.strip():
+            progress.error('Danh sách mã sản phẩm không được để trống!')
             flash('Danh sách mã sản phẩm không được để trống!', 'error')
             return redirect(url_for('main.index', _anchor='filter-products-tab'))
+        
+        progress.update(10, "Đang xử lý danh sách mã sản phẩm")
         
         # Xử lý danh sách mã sản phẩm (mỗi mã trên một dòng)
         product_codes = [code.strip() for code in product_codes_text.strip().split('\n') if code.strip()]
@@ -1385,21 +1487,27 @@ def filter_products():
         
         print(f"DEBUG: Đã nhận {len(product_codes)} mã sản phẩm cần lọc")
         
+        progress.update(15, f"Đã xử lý {len(product_codes)} mã sản phẩm cần lọc", "Đang kiểm tra file Excel")
+        
         # Kiểm tra file Excel
         excel_file = request.files['excel_file']
         if excel_file.filename == '':
+            progress.error('Không có file Excel nào được chọn!')
             flash('Không có file Excel nào được chọn!', 'error')
             return redirect(url_for('main.index', _anchor='filter-products-tab'))
         
         if not allowed_file(excel_file.filename, ALLOWED_EXTENSIONS_EXCEL):
+            progress.error('Chỉ chấp nhận file .xlsx hoặc .xls!')
             flash('Chỉ chấp nhận file .xlsx hoặc .xls!', 'error')
             return redirect(url_for('main.index', _anchor='filter-products-tab'))
         
-        # Thông báo tiến trình
+        # Thông báo tiến trình (kết hợp với socketio)
         socketio.emit('progress_update', {
-            'percent': 10, 
+            'percent': 20, 
             'message': f'Đang xử lý {len(product_codes)} mã sản phẩm cần lọc...'
         })
+        
+        progress.update(20, "Đang lưu file Excel tạm thời", f"File: {excel_file.filename}")
         
         # Lưu file tạm thời
         temp_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], 'temp')
@@ -1410,6 +1518,11 @@ def filter_products():
         
         print(f"DEBUG: Đã lưu file Excel tạm thời tại: {input_excel_path}")
         
+        progress.update(30, "Đang đọc file Excel", "Đang phân tích cấu trúc file")
+        
+        # Tạo progress bar con cho việc đọc Excel
+        excel_progress = create_child_progress(progress, "Đọc file Excel", 20)
+        
         # Đọc file Excel với pandas
         df = None
         try:
@@ -1417,6 +1530,8 @@ def filter_products():
             xls = pd.ExcelFile(input_excel_path)
             sheet_names = xls.sheet_names
             print(f"DEBUG: Các sheet trong file Excel: {sheet_names}")
+            
+            excel_progress.update(5, f"Tìm thấy {len(sheet_names)} sheets")
             
             if len(sheet_names) > 0:
                 # Nếu file có sheet "Tổng hợp sản phẩm", sử dụng sheet đó
@@ -1430,33 +1545,48 @@ def filter_products():
             else:
                 df = pd.read_excel(input_excel_path)
             
+            excel_progress.update(15, f"Đã đọc {len(df)} dòng dữ liệu")
+            
+            # Chuyển tất cả các cột có kiểu object sang string để tránh lỗi NaN
+            for col in df.select_dtypes(include=['object']).columns:
+                df[col] = df[col].astype(str)
+            
+            excel_progress.complete("success", f"Đọc Excel thành công", {
+                "Sheets": len(sheet_names),
+                "Dòng dữ liệu": len(df),
+                "Cột": len(df.columns)
+            })
+            
             socketio.emit('progress_update', {
-                'percent': 30, 
+                'percent': 50, 
                 'message': f'Đã đọc file Excel với {len(df)} dòng. Đang lọc dữ liệu...'
             })
             
             # Log thông tin về cấu trúc của DataFrame để debug
             print(f"DEBUG: Cấu trúc DataFrame: {df.shape}, Cột: {df.columns.tolist()}")
-            # Chuyển tất cả các cột có kiểu object sang string để tránh lỗi NaN
-            for col in df.select_dtypes(include=['object']).columns:
-                df[col] = df[col].astype(str)
             
         except Exception as e:
+            excel_progress.error(f'Lỗi khi đọc file Excel: {str(e)}')
             error_message = f'Lỗi khi đọc file Excel: {str(e)}'
             print(f"DEBUG: {error_message}")
             traceback.print_exc()
+            progress.error(error_message, traceback.format_exc())
             flash(error_message, 'error')
             return redirect(url_for('main.index', _anchor='filter-products-tab'))
         
         # Kiểm tra nếu DataFrame trống hoặc không có dữ liệu
         if df is None or df.empty:
+            progress.error('File Excel không chứa dữ liệu!')
             flash('File Excel không chứa dữ liệu!', 'error')
             return redirect(url_for('main.index', _anchor='filter-products-tab'))
         
         # Kiểm tra nếu DataFrame không có ít nhất 2 cột (cần cột B)
         if df.shape[1] < 2:
+            progress.error('File Excel phải có ít nhất 2 cột (cột B chứa mã sản phẩm)!')
             flash('File Excel phải có ít nhất 2 cột (cột B chứa mã sản phẩm)!', 'error')
             return redirect(url_for('main.index', _anchor='filter-products-tab'))
+        
+        progress.update(60, "Đang xác định cột chứa mã sản phẩm", f"Phân tích {len(df.columns)} cột")
         
         # Xác định cột chứa mã sản phẩm
         product_code_column = 1  # Mặc định là cột B (index 1)
@@ -1472,6 +1602,11 @@ def filter_products():
         # Chuẩn hóa mã sản phẩm từ file Excel (loại bỏ khoảng trắng, chuyển thành chữ thường để so sánh)
         normalized_df_codes = df_product_codes.str.lower()
         
+        progress.update(70, "Đang lọc sản phẩm", "Tìm các mã cần xóa trong Excel")
+        
+        # Tạo progress bar con cho việc lọc
+        filter_progress = create_child_progress(progress, "Lọc dữ liệu", 20)
+        
         # Tạo mask để lọc các hàng có mã sản phẩm nằm trong danh sách cần xóa
         rows_to_remove = normalized_df_codes.isin(normalized_product_codes)
         
@@ -1482,18 +1617,22 @@ def filter_products():
         removed_count = rows_to_remove.sum()
         print(f"DEBUG: Đã tìm thấy {removed_count} mã sản phẩm cần xóa")
         
+        filter_progress.update(10, f"Tìm thấy {removed_count} mã cần xóa")
+        
         # In một số mã sản phẩm đã tìm thấy để debug
         if removed_count > 0:
             matched_codes = df[rows_to_remove].iloc[:, product_code_column].tolist()
             print(f"DEBUG: Một số mã sản phẩm đã tìm thấy (tối đa 5): {matched_codes[:5]}")
         
         socketio.emit('progress_update', {
-            'percent': 60, 
+            'percent': 80, 
             'message': f'Đã tìm thấy {removed_count} mã sản phẩm cần xóa. Đang tạo báo cáo...'
         })
         
         # Tạo DataFrame mới không chứa các hàng đã lọc
         filtered_df = df[~rows_to_remove]
+        
+        filter_progress.update(20, f"Đã lọc thành {len(filtered_df)} dòng")
         
         # Thêm cột "Mã sản phẩm đã lọc" vào vị trí cột thứ 3 (index 2)
         if filtered_df.shape[1] <= 2:
@@ -1507,6 +1646,14 @@ def filter_products():
         # Thêm danh sách mã sản phẩm đã lọc vào cột C chỉ cho dòng đầu tiên
         if not filtered_df.empty:
             filtered_df.iloc[0, 2] = ', '.join([str(code).strip() for code in product_codes])
+        
+        filter_progress.complete("success", "Lọc dữ liệu hoàn tất", {
+            "Dòng ban đầu": len(df),
+            "Dòng đã xóa": removed_count,
+            "Dòng còn lại": len(filtered_df)
+        })
+        
+        progress.update(90, "Đang tạo file Excel kết quả", "Lưu dữ liệu đã lọc")
         
         # Tạo tên file output
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -2495,11 +2642,15 @@ def crawl_codienhaiau():
         return redirect(url_for('main.index'))
 
 @main_bp.route('/crawl-baa', methods=['POST'])
-def crawl_baa():
+@progress_tracker(name="Cào dữ liệu BAA.vn", total_steps=100, verbose=True)
+def crawl_baa(progress: TerminalProgressBar):
     try:
+        progress.update(5, "Đang kiểm tra thông tin đầu vào")
+        
         # Lấy thông tin từ form
         category_urls = request.form.get('category_urls', '').strip()
         if not category_urls:
+            progress.error('Vui lòng nhập ít nhất một URL danh mục hoặc sản phẩm.')
             flash('Vui lòng nhập ít nhất một URL danh mục hoặc sản phẩm.', 'error')
             return redirect(url_for('main.index'))
         
@@ -2511,18 +2662,43 @@ def crawl_baa():
         max_workers = min(max(1, max_workers), 16)  # Từ 1-16 luồng
         max_retries = min(max(1, max_retries), 5)   # Từ 1-5 lần thử lại
         
+        progress.update(10, "Đang chuẩn bị crawler", f"Max workers: {max_workers}, Max retries: {max_retries}")
+        
         # Log thông tin
         print(f"Bắt đầu cào dữ liệu với {max_workers} luồng, {max_retries} lần thử lại")
         
         url_list = [u.strip() for u in category_urls.splitlines() if u.strip()]
+        
+        progress.update(15, f"Đã phân tích {len(url_list)} URLs", "Đang khởi tạo BAA crawler")
+        
+        # Tạo progress bar con cho crawler
+        crawler_progress = create_child_progress(progress, "BAA Product Crawler", 70)
+        
         crawler = BaaProductCrawler(output_root=current_app.config['UPLOAD_FOLDER'], 
                                    max_workers=max_workers, 
                                    max_retries=max_retries)
+        
+        crawler_progress.update(5, "Crawler đã sẵn sàng", "Bắt đầu cào dữ liệu...")
+        
+        # Inject progress vào crawler để theo dõi tiến trình
         products, result_dir = crawler.crawl_products(url_list)
         
+        crawler_progress.complete("success", f"Cào dữ liệu hoàn tất", {
+            "Sản phẩm đã cào": len(products),
+            "Thư mục kết quả": result_dir
+        })
+        
+        progress.update(85, f"Đã cào {len(products)} sản phẩm", "Đang nén kết quả thành ZIP")
+        
         # Nén kết quả và trả về link download
+        zip_progress = create_child_progress(progress, "Tạo file ZIP", 10)
+        
         zip_path = result_dir + '.zip'
         if os.path.exists(zip_path):
+            zip_progress.complete("success", "File ZIP đã tồn tại")
+            
+            progress.update(95, "Đang tạo thông tin tải xuống")
+            
             download_url = url_for('main.download_file', filename=os.path.basename(zip_path))
             flash(f'Đã cào xong dữ liệu {len(products)} sản phẩm. <a href="{download_url}" class="btn btn-primary mt-2">Tải xuống kết quả</a>', 'success')
             
@@ -2535,6 +2711,16 @@ def crawl_baa():
                 'Kích thước file': f"{zip_size:.2f} MB"
             }
             
+            # Hoàn thành progress với thống kê chi tiết
+            progress.complete("success", "Cào dữ liệu BAA.vn hoàn tất", {
+                "URLs đầu vào": len(url_list),
+                "Sản phẩm cào được": products_count,
+                "Kích thước ZIP": f"{zip_size:.2f} MB",
+                "Max workers": max_workers,
+                "Max retries": max_retries,
+                "File ZIP": os.path.basename(zip_path)
+            })
+            
             # Trả về trang kết quả với đường dẫn tải xuống và thống kê
             return render_template('crawler_result.html', 
                                   download_url=download_url,
@@ -2542,11 +2728,14 @@ def crawl_baa():
                                   stats=stats,
                                   products_count=products_count)
         else:
+            zip_progress.error("Không tạo được file ZIP")
+            progress.warning(f'Đã cào xong dữ liệu {len(products)} sản phẩm nhưng không tạo được file ZIP.')
             flash(f'Đã cào xong dữ liệu {len(products)} sản phẩm nhưng không tạo được file ZIP.', 'warning')
             return redirect(url_for('main.index'))
     
     except Exception as e:
         traceback.print_exc()
+        progress.error(f'Lỗi: {str(e)}', traceback.format_exc())
         flash(f'Lỗi: {str(e)}', 'error')
         return redirect(url_for('main.index'))
 
