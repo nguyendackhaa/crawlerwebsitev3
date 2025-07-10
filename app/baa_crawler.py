@@ -597,7 +597,7 @@ class BaaProductCrawler:
                                     remaining_info = f", còn lại: {remaining:.1f}s"
                                 else:
                                     remaining_info = f", còn lại: {remaining/60:.1f}m"
-                        
+                            
                             socketio.emit('progress_update', {
                                 'percent': batch_progress, 
                                 'message': f'[{cat_name}] Đã xử lý {items_processed}/{len(product_urls)} sản phẩm ({batch_success} có giá, {batch_skipped} không có giá, {batch_failure} lỗi)',
@@ -627,7 +627,7 @@ class BaaProductCrawler:
                     if info is None:
                         break
                     products.append(info)
-                    
+                
                     # Nhóm sản phẩm theo series (chỉ khi có Series)
                     series_name = info.get('Series')
                     if series_name:  # Chỉ nhóm khi có series
@@ -1406,4 +1406,4 @@ class BaaProductCrawler:
             if td.text and any(keyword in td.text.lower() for keyword in ['mã', 'model', 'part no']):
                 td.string = td.text.upper()
             
-        return str(soup)
+        return str(soup) 

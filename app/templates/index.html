@@ -172,6 +172,21 @@
                     <i class="bi bi-folder-symlink"></i> Phân loại sản phẩm theo danh mục
                 </button>
             </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="fotek-crawler-tab" data-bs-toggle="tab" data-bs-target="#fotek-crawler" type="button" role="tab" aria-controls="fotek-crawler" aria-selected="false">
+                    <i class="bi bi-globe"></i> Cào dữ liệu Fotek.com.tw
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="misumi-crawler-tab" data-bs-toggle="tab" data-bs-target="#misumi-crawler" type="button" role="tab" aria-controls="misumi-crawler" aria-selected="false">
+                    <i class="bi bi-globe"></i> Cào dữ liệu MISUMI
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="hoplong-crawler-tab" onclick="window.open('/hoplong', '_blank')" type="button">
+                    <i class="bi bi-microchip"></i> Cào dữ liệu HoplongTech.com
+                </button>
+            </li>
         </ul>
 
         <div class="tab-content" id="myTabContent">
@@ -968,6 +983,9 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                             <p class="text-muted">Ví dụ: https://codienhaiau.com/category/keyence/cam-bien-keyence/</p>
                         </div>
                         <div class="step">
+                            <p>Chọn các trường dữ liệu muốn cào</p>
+                        </div>
+                        <div class="step">
                             <p>Nhấn nút "Cào dữ liệu" để bắt đầu quá trình</p>
                         </div>
                         <div class="step">
@@ -980,13 +998,95 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                             <label for="codienhaiau_urls" class="form-label">Danh sách các URL danh mục Codienhaiau.com:</label>
                             <textarea id="codienhaiau_urls" name="category_urls" class="form-control" rows="5" required placeholder="Nhập URL danh mục Codienhaiau.com vào đây... (mỗi URL một dòng)"></textarea>
                         </div>
+
+                        <!-- Tùy chọn trường dữ liệu cần cào -->
+                        <div class="mb-3">
+                            <label class="form-label">Chọn trường dữ liệu cần cào:</label>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="selected_fields" value="product_name" id="field_product_name" checked>
+                                        <label class="form-check-label" for="field_product_name">
+                                            <i class="bi bi-tag-fill text-primary"></i> Tên sản phẩm
+                                        </label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="selected_fields" value="product_code" id="field_product_code" checked>
+                                        <label class="form-check-label" for="field_product_code">
+                                            <i class="bi bi-upc-scan text-success"></i> Mã sản phẩm
+                                        </label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="selected_fields" value="specifications" id="field_specifications" checked>
+                                        <label class="form-check-label" for="field_specifications">
+                                            <i class="bi bi-list-ul text-info"></i> Thông số kĩ thuật
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="selected_fields" value="price" id="field_price">
+                                        <label class="form-check-label" for="field_price">
+                                            <i class="bi bi-currency-dollar text-warning"></i> Giá sản phẩm
+                                        </label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="selected_fields" value="product_image" id="field_product_image">
+                                        <label class="form-check-label" for="field_product_image">
+                                            <i class="bi bi-image text-secondary"></i> Ảnh sản phẩm
+                                        </label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="selected_fields" value="url" id="field_url">
+                                        <label class="form-check-label" for="field_url">
+                                            <i class="bi bi-link-45deg text-dark"></i> URL sản phẩm
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <small class="text-muted">
+                                <i class="bi bi-info-circle"></i> 
+                                Chọn ít nhất một trường. STT (số thứ tự) sẽ luôn được bao gồm.
+                            </small>
+                            
+                            <!-- Nút chọn/bỏ chọn tất cả -->
+                            <div class="mt-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary" onclick="toggleAllFields(true)">
+                                    <i class="bi bi-check-all"></i> Chọn tất cả
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="toggleAllFields(false)">
+                                    <i class="bi bi-x-lg"></i> Bỏ chọn tất cả
+                                </button>
+                            </div>
+                        </div>
+
                         <button type="submit" class="btn btn-primary w-100">
                             <i class="bi bi-cloud-download"></i> Cào dữ liệu
                         </button>
                     </form>
-                    </div>
                 </div>
+            </div>
             
+            <script>
+                // Hàm để chọn/bỏ chọn tất cả các trường
+                function toggleAllFields(selectAll) {
+                    const checkboxes = document.querySelectorAll('input[name="selected_fields"]');
+                    checkboxes.forEach(checkbox => {
+                        checkbox.checked = selectAll;
+                    });
+                }
+
+                // Kiểm tra trước khi submit form để đảm bảo có ít nhất một trường được chọn
+                document.getElementById('codienhaiau-crawler-form').addEventListener('submit', function(e) {
+                    const checkboxes = document.querySelectorAll('input[name="selected_fields"]:checked');
+                    if (checkboxes.length === 0) {
+                        e.preventDefault();
+                        alert('Vui lòng chọn ít nhất một trường dữ liệu cần cào!');
+                        return false;
+                    }
+                });
+            </script>
+
             <!-- Tab cào dữ liệu từ BAA.vn -->
             <div class="tab-pane fade" id="baa-crawler" role="tabpanel" aria-labelledby="baa-crawler-tab">
                 <div class="form-container">
@@ -1158,6 +1258,296 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                     </form>
                 </div>
             </div>
+
+            <!-- Tab cào dữ liệu Fotek.com.tw -->
+            <div class="tab-pane fade" id="fotek-crawler" role="tabpanel" aria-labelledby="fotek-crawler-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Cào dữ liệu từ Fotek.com.tw</h4>
+                    
+                    <div class="data-format">
+                        <h5>Thông tin về chức năng</h5>
+                        <p>Chức năng này tự động cào dữ liệu sản phẩm từ website Fotek.com.tw với các tính năng:</p>
+                        <ol>
+                            <li>Tự động phát hiện tất cả danh mục sản phẩm từ trang chủ</li>
+                            <li>Cào dữ liệu theo cấu trúc: Danh mục → Series → Sản phẩm</li>
+                            <li>Trích xuất thông tin chi tiết: Tên sản phẩm, Mã sản phẩm, Type/Series, Ảnh sản phẩm</li>
+                            <li>Sử dụng AI Gemini để đọc ảnh thông số kỹ thuật và chuyển đổi sang tiếng Việt</li>
+                            <li>Tự động tạo bảng thông số kỹ thuật định dạng HTML chuẩn</li>
+                            <li>Tổ chức dữ liệu theo cấu trúc thư mục: Danh mục/Series/Dữ liệu + Ảnh</li>
+                            <li>Tải và chuyển đổi ảnh sản phẩm sang định dạng WebP</li>
+                            <li>Tạo báo cáo tổng hợp với thống kê chi tiết</li>
+                        </ol>
+                        <div class="alert alert-info mt-3">
+                            <i class="bi bi-info-circle-fill me-2"></i> 
+                            <strong>Lưu ý:</strong> Chức năng sử dụng AI Gemini để đọc ảnh thông số kỹ thuật, 
+                            đảm bảo kết nối internet ổn định để có kết quả tốt nhất.
+                        </div>
+                    </div>
+                    
+                    <div class="steps">
+                        <div class="step">
+                            <p>Nhấn nút "Bắt đầu cào dữ liệu Fotek" để khởi động quá trình</p>
+                        </div>
+                        <div class="step">
+                            <p>Hệ thống sẽ tự động phát hiện và xử lý tất cả danh mục sản phẩm</p>
+                        </div>
+                        <div class="step">
+                            <p>AI sẽ đọc và dịch thông số kỹ thuật từ ảnh sang tiếng Việt</p>
+                        </div>
+                        <div class="step">
+                            <p>Tải xuống file ZIP chứa dữ liệu đã được tổ chức theo cấu trúc</p>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-warning">
+                        <i class="bi bi-clock-fill me-2"></i>
+                        <strong>Thời gian ước tính:</strong> 30-60 phút tùy thuộc vào số lượng sản phẩm và tốc độ mạng.
+                        Vui lòng không tắt trình duyệt trong quá trình cào dữ liệu.
+                    </div>
+
+                    <!-- Tùy chọn cào ưu tiên -->
+                    <div class="card mb-3">
+                        <div class="card-header bg-light">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="priority-mode" onchange="togglePriorityMode()">
+                                <label class="form-check-label fw-bold" for="priority-mode">
+                                    <i class="bi bi-lightning-charge"></i> Cào danh mục ưu tiên
+                                </label>
+                            </div>
+                        </div>
+                        <div class="card-body" id="priority-options" style="display: none;">
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle-fill me-2"></i>
+                                <strong>Cào ưu tiên:</strong> Chọn các danh mục cụ thể để cào trước và xem kết quả ngay lập tức 
+                                mà không cần đợi cào hết tất cả danh mục.
+                            </div>
+                            
+                            <!-- Tùy chọn chế độ cào ưu tiên -->
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="priority-type" id="priority-categories" value="categories" checked onchange="changePriorityType()">
+                                        <label class="form-check-label" for="priority-categories">
+                                            Cào theo danh mục
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="priority-type" id="priority-series" value="series" onchange="changePriorityType()">
+                                        <label class="form-check-label" for="priority-series">
+                                            Cào theo series cụ thể
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Phần chọn danh mục -->
+                            <div id="categories-mode">
+                                <button type="button" class="btn btn-outline-primary mb-3" onclick="loadFotekCategories()" id="load-categories-btn">
+                                    <i class="bi bi-list-ul"></i> Tải danh sách danh mục
+                                </button>
+                                
+                                <div id="categories-container" style="display: none;">
+                                    <label for="priority-categories-select" class="form-label">Chọn danh mục ưu tiên:</label>
+                                    <select multiple class="form-select" id="priority-categories-select" size="8">
+                                        <!-- Danh mục sẽ được load bằng JavaScript -->
+                                    </select>
+                                    <small class="text-muted">Giữ Ctrl (hoặc Cmd) để chọn nhiều danh mục</small>
+                                </div>
+                            </div>
+
+                            <!-- Phần chọn series -->
+                            <div id="series-mode" style="display: none;">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <label for="category-for-series" class="form-label">Chọn danh mục:</label>
+                                        <select class="form-select" id="category-for-series" onchange="loadSeriesInCategory()">
+                                            <option value="">-- Chọn danh mục --</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <button type="button" class="btn btn-outline-success mt-4" onclick="loadFotekCategoriesForSeries()" id="load-categories-for-series-btn">
+                                            <i class="bi bi-arrow-clockwise"></i> Tải danh mục
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div id="series-container" class="mt-3" style="display: none;">
+                                    <label for="selected-series-list" class="form-label">Chọn series cụ thể:</label>
+                                    <select multiple class="form-select" id="selected-series-list" size="10">
+                                        <!-- Series sẽ được load bằng JavaScript -->
+                                    </select>
+                                    <small class="text-muted">Giữ Ctrl (hoặc Cmd) để chọn nhiều series</small>
+                                    
+                                    <div class="alert alert-success mt-2" style="display: none;" id="series-info">
+                                        <small id="series-count-info"></small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="button" class="btn btn-primary w-100 mb-3" onclick="startFotekCrawl()" id="fotek-crawl-btn">
+                        <i class="bi bi-download"></i> Bắt đầu cào dữ liệu Fotek.com.tw
+                    </button>
+
+                    <!-- Khu vực hiển thị kết quả -->
+                    <div id="fotek-result" class="mt-4" style="display: none;">
+                        <div class="alert alert-success">
+                            <h6 class="mb-2">Cào dữ liệu hoàn tất!</h6>
+                            <p class="mb-2" id="fotek-result-message"></p>
+                            <a id="fotek-download-link" href="#" class="btn btn-success">
+                                <i class="bi bi-download"></i> Tải xuống kết quả
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Khu vực hiển thị lỗi -->
+                    <div id="fotek-error" class="mt-4" style="display: none;">
+                        <div class="alert alert-danger">
+                            <h6 class="mb-2">Có lỗi xảy ra!</h6>
+                            <p class="mb-0" id="fotek-error-message"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab cào dữ liệu MISUMI -->
+            <div class="tab-pane fade" id="misumi-crawler" role="tabpanel" aria-labelledby="misumi-crawler-tab">
+                <div class="form-container">
+                    <h4 class="mb-3">Cào dữ liệu từ MISUMI Vietnam</h4>
+                    
+                    <div class="data-format">
+                        <h5>Thông tin về chức năng</h5>
+                        <p>Chức năng này tự động cào dữ liệu sản phẩm từ website MISUMI Vietnam với các tính năng:</p>
+                        <ol>
+                            <li>Tự động load cấu trúc danh mục từ trang chủ vn.misumi-ec.com</li>
+                            <li>Hiển thị danh mục cha và danh mục con để người dùng lựa chọn</li>
+                            <li>Lọc theo nhãn hiệu/thương hiệu trong từng danh mục</li>
+                            <li>Cào dữ liệu sản phẩm: Tên, Mã, Thông số kỹ thuật, Ảnh</li>
+                            <li>Tạo file Excel với cấu trúc dữ liệu chuẩn</li>
+                            <li>Tự động tổ chức theo danh mục và nhãn hiệu</li>
+                        </ol>
+                        <div class="alert alert-info mt-3">
+                            <i class="bi bi-info-circle-fill me-2"></i> 
+                            <strong>Lưu ý:</strong> Quá trình load danh mục có thể mất 30-60 giây tùy vào tốc độ mạng.
+                        </div>
+                    </div>
+                    
+                    <!-- Bước 1: Load danh mục -->
+                    <div class="card mb-3" id="step1-card">
+                        <div class="card-header bg-primary text-white">
+                            <i class="bi bi-list-ul"></i> Bước 1: Load cấu trúc danh mục
+                        </div>
+                        <div class="card-body">
+                            <p class="mb-3">Nhấn nút bên dưới để tải toàn bộ cấu trúc danh mục từ MISUMI:</p>
+                            
+                            <button type="button" class="btn btn-outline-primary w-100" onclick="loadMisumiCategories()" id="load-misumi-categories-btn">
+                                <i class="bi bi-cloud-download"></i> Tải cấu trúc danh mục MISUMI
+                            </button>
+                            
+                            <div id="categories-loading" class="text-center mt-3" style="display: none;">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Đang tải...</span>
+                                </div>
+                                <p class="mt-2 text-muted">Đang tải cấu trúc danh mục từ MISUMI...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bước 2: Chọn danh mục -->
+                    <div class="card mb-3" id="step2-card" style="display: none;">
+                        <div class="card-header bg-success text-white">
+                            <i class="bi bi-check-square"></i> Bước 2: Chọn danh mục cần cào
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <!-- Danh mục cha -->
+                                <div class="col-md-6">
+                                    <label for="main-categories" class="form-label fw-bold">Danh mục chính:</label>
+                                    <select class="form-select" id="main-categories" onchange="loadSubcategories()" size="10">
+                                        <!-- Được load bằng JavaScript -->
+                                    </select>
+                                </div>
+                                
+                                <!-- Danh mục con -->
+                                <div class="col-md-6">
+                                    <label for="sub-categories" class="form-label fw-bold">Danh mục con:</label>
+                                    <select multiple class="form-select" id="sub-categories" size="10">
+                                        <option disabled>Vui lòng chọn danh mục chính trước</option>
+                                    </select>
+                                    <small class="text-muted">Giữ Ctrl để chọn nhiều danh mục con</small>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-3">
+                                <button type="button" class="btn btn-success" onclick="proceedToBrandSelection()" id="select-brands-btn" disabled>
+                                    <i class="bi bi-arrow-right"></i> Tiếp tục chọn nhãn hiệu
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bước 3: Chọn nhãn hiệu -->
+                    <div class="card mb-3" id="step3-card" style="display: none;">
+                        <div class="card-header bg-warning">
+                            <i class="bi bi-tag"></i> Bước 3: Chọn nhãn hiệu/thương hiệu
+                        </div>
+                        <div class="card-body">
+                            <div id="brands-loading" class="text-center" style="display: none;">
+                                <div class="spinner-border text-warning" role="status">
+                                    <span class="visually-hidden">Đang tải nhãn hiệu...</span>
+                                </div>
+                                <p class="mt-2 text-muted">Đang tải danh sách nhãn hiệu...</p>
+                            </div>
+                            
+                            <div id="brands-container" style="display: none;">
+                                <label for="brand-list" class="form-label fw-bold">Nhãn hiệu có sẵn:</label>
+                                <select multiple class="form-select" id="brand-list" size="8">
+                                    <!-- Được load bằng JavaScript -->
+                                </select>
+                                <small class="text-muted">Giữ Ctrl để chọn nhiều nhãn hiệu</small>
+                                
+                                <div class="mt-3">
+                                    <button type="button" class="btn btn-warning" onclick="startMisumiCrawl()" id="start-crawl-btn" disabled>
+                                        <i class="bi bi-play-circle"></i> Bắt đầu cào dữ liệu
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Hiển thị thông tin đã chọn -->
+                    <div id="selection-summary" style="display: none;" class="alert alert-info">
+                        <h6>Tóm tắt lựa chọn:</h6>
+                        <ul class="mb-0">
+                            <li><strong>Danh mục chính:</strong> <span id="selected-main-category"></span></li>
+                            <li><strong>Danh mục con:</strong> <span id="selected-sub-categories"></span></li>
+                            <li><strong>Nhãn hiệu:</strong> <span id="selected-brands"></span></li>
+                        </ul>
+                    </div>
+
+                    <!-- Khu vực hiển thị kết quả -->
+                    <div id="misumi-result" class="mt-4" style="display: none;">
+                        <div class="alert alert-success">
+                            <h6 class="mb-2">Cào dữ liệu hoàn tất!</h6>
+                            <p class="mb-2" id="misumi-result-message"></p>
+                            <a id="misumi-download-link" href="#" class="btn btn-success">
+                                <i class="bi bi-download"></i> Tải xuống kết quả
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Khu vực hiển thị lỗi -->
+                    <div id="misumi-error" class="mt-4" style="display: none;">
+                        <div class="alert alert-danger">
+                            <h6 class="mb-2">Có lỗi xảy ra!</h6>
+                            <p class="mb-0" id="misumi-error-message"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1208,6 +1598,40 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                     progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-info';
                 } else if (data.percent < 70) {
                     progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-primary';
+                } else if (data.percent < 100) {
+                    progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-success';
+                } else {
+                    progressBar.className = 'progress-bar bg-success';
+                }
+                
+                // Tự động cuộn đến thanh tiến trình
+                progressContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            });
+            
+            // Xử lý tiến trình cào dữ liệu Fotek
+            socket.on('fotek_progress', function(data) {
+                const progressBar = document.getElementById('progress-bar');
+                const progressMessage = document.getElementById('progress-message');
+                const progressDetail = document.getElementById('progress-detail');
+                const progressContainer = document.getElementById('progress-container');
+                
+                progressContainer.classList.remove('d-none');
+                progressBar.style.width = data.percent + '%';
+                progressBar.setAttribute('aria-valuenow', data.percent);
+                progressMessage.textContent = data.message;
+                
+                if (data.log) {
+                    progressDetail.textContent = data.log;
+                    progressDetail.classList.remove('d-none');
+                } else {
+                    progressDetail.classList.add('d-none');
+                }
+                
+                // Thay đổi màu sắc thanh tiến trình dựa vào tiến độ
+                if (data.percent < 30) {
+                    progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-warning';
+                } else if (data.percent < 70) {
+                    progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-info';
                 } else if (data.percent < 100) {
                     progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-success';
                 } else {
@@ -1320,6 +1744,678 @@ Message: ${data.message}`;
             .catch(error => {
                 debugOutput.textContent = `Lỗi kết nối: ${error.message}`;
             });
+        }
+
+        // Hàm để bắt đầu cào dữ liệu Fotek
+        function startFotekCrawl() {
+            const button = document.getElementById('fotek-crawl-btn');
+            const resultDiv = document.getElementById('fotek-result');
+            const errorDiv = document.getElementById('fotek-error');
+            const progressContainer = document.getElementById('progress-container');
+            
+            // Ẩn kết quả và lỗi trước đó
+            resultDiv.style.display = 'none';
+            errorDiv.style.display = 'none';
+            
+            // Lấy tùy chọn cào ưu tiên
+            const priorityMode = document.getElementById('priority-mode').checked;
+            let priorityCategories = [];
+            let selectedSeries = [];
+            let modeText = 'đầy đủ';
+            
+            if (priorityMode) {
+                // Kiểm tra chế độ: danh mục hay series
+                const priorityType = document.querySelector('input[name="priority-type"]:checked').value;
+                
+                if (priorityType === 'categories') {
+                    // Chế độ cào theo danh mục
+                    const select = document.getElementById('priority-categories-select');
+                    const selectedOptions = Array.from(select.selectedOptions);
+                    
+                    if (selectedOptions.length === 0) {
+                        alert('Vui lòng chọn ít nhất một danh mục ưu tiên!');
+                        return;
+                    }
+                    
+                    priorityCategories = selectedOptions.map(option => ({
+                        name: option.text,
+                        url: option.value
+                    }));
+                    modeText = `ưu tiên (${selectedOptions.length} danh mục)`;
+                    
+                } else if (priorityType === 'series') {
+                    // Chế độ cào theo series
+                    const select = document.getElementById('selected-series-list');
+                    const selectedOptions = Array.from(select.selectedOptions);
+                    
+                    if (selectedOptions.length === 0) {
+                        alert('Vui lòng chọn ít nhất một series cụ thể!');
+                        return;
+                    }
+                    
+                    selectedSeries = selectedOptions.map(option => {
+                        const data = JSON.parse(option.dataset.seriesData);
+                        return data;
+                    });
+                    modeText = `ưu tiên (${selectedOptions.length} series)`;
+                }
+            }
+            
+            // Disable button và hiển thị loading
+            button.disabled = true;
+            button.innerHTML = `<i class="bi bi-hourglass-split"></i> Đang cào dữ liệu ${modeText}...`;
+            
+            // Hiển thị thanh tiến trình
+            progressContainer.classList.remove('d-none');
+            
+            // Chuẩn bị dữ liệu gửi
+            const requestData = {
+                priority_mode: priorityMode,
+                priority_categories: priorityCategories,
+                selected_series: selectedSeries
+            };
+            
+            // Gọi API cào dữ liệu Fotek
+            fetch('/crawl-fotek', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Enable lại button
+                button.disabled = false;
+                button.innerHTML = '<i class="bi bi-download"></i> Bắt đầu cào dữ liệu Fotek.com.tw';
+                
+                if (data.success) {
+                    // Hiển thị kết quả thành công
+                    document.getElementById('fotek-result-message').textContent = data.message;
+                    document.getElementById('fotek-download-link').href = data.download_url;
+                    resultDiv.style.display = 'block';
+                    
+                    // Tự động cuộn đến kết quả
+                    resultDiv.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    // Hiển thị lỗi
+                    document.getElementById('fotek-error-message').textContent = data.message;
+                    errorDiv.style.display = 'block';
+                    
+                    // Tự động cuộn đến kết quả
+                    errorDiv.scrollIntoView({ behavior: 'smooth' });
+                }
+            })
+            .catch(error => {
+                // Enable lại button
+                button.disabled = false;
+                button.innerHTML = '<i class="bi bi-download"></i> Bắt đầu cào dữ liệu Fotek.com.tw';
+                
+                // Hiển thị lỗi kết nối
+                document.getElementById('fotek-error-message').textContent = `Lỗi kết nối: ${error.message}`;
+                errorDiv.style.display = 'block';
+                
+                console.error('Error:', error);
+            });
+        }
+
+        // Hàm toggle priority mode
+        function togglePriorityMode() {
+            const checkbox = document.getElementById('priority-mode');
+            const priorityOptions = document.getElementById('priority-options');
+            
+            if (checkbox.checked) {
+                priorityOptions.style.display = 'block';
+            } else {
+                priorityOptions.style.display = 'none';
+                // Reset selections
+                resetPrioritySelections();
+            }
+        }
+
+        // Hàm thay đổi chế độ ưu tiên
+        function changePriorityType() {
+            const priorityType = document.querySelector('input[name="priority-type"]:checked').value;
+            const categoriesMode = document.getElementById('categories-mode');
+            const seriesMode = document.getElementById('series-mode');
+            
+            if (priorityType === 'categories') {
+                categoriesMode.style.display = 'block';
+                seriesMode.style.display = 'none';
+                
+                // Reset series selections
+                const seriesContainer = document.getElementById('series-container');
+                seriesContainer.style.display = 'none';
+                const seriesList = document.getElementById('selected-series-list');
+                seriesList.innerHTML = '';
+                
+            } else if (priorityType === 'series') {
+                categoriesMode.style.display = 'none';
+                seriesMode.style.display = 'block';
+                
+                // Reset category selections
+                const categoriesContainer = document.getElementById('categories-container');
+                categoriesContainer.style.display = 'none';
+                const categoriesSelect = document.getElementById('priority-categories-select');
+                categoriesSelect.innerHTML = '';
+            }
+        }
+
+        // Hàm reset tất cả selections
+        function resetPrioritySelections() {
+            // Reset categories mode
+            const categoriesContainer = document.getElementById('categories-container');
+            categoriesContainer.style.display = 'none';
+            const categoriesSelect = document.getElementById('priority-categories-select');
+            categoriesSelect.innerHTML = '';
+            
+            // Reset series mode
+            const seriesContainer = document.getElementById('series-container');
+            seriesContainer.style.display = 'none';
+            const seriesList = document.getElementById('selected-series-list');
+            seriesList.innerHTML = '';
+            const categoryForSeries = document.getElementById('category-for-series');
+            categoryForSeries.innerHTML = '<option value="">-- Chọn danh mục --</option>';
+        }
+
+        // Hàm tải danh sách danh mục Fotek (cho chế độ danh mục)
+        function loadFotekCategories() {
+            const button = document.getElementById('load-categories-btn');
+            const categoriesContainer = document.getElementById('categories-container');
+            const select = document.getElementById('priority-categories-select');
+            
+            // Disable button và hiển thị loading
+            button.disabled = true;
+            button.innerHTML = '<i class="bi bi-hourglass-split"></i> Đang tải...';
+            
+            // Gọi API lấy danh sách danh mục
+            fetch('/get-fotek-categories')
+            .then(response => response.json())
+            .then(data => {
+                // Enable lại button
+                button.disabled = false;
+                button.innerHTML = '<i class="bi bi-list-ul"></i> Tải danh sách danh mục';
+                
+                if (data.success) {
+                    // Xóa options cũ
+                    select.innerHTML = '';
+                    
+                    // Thêm options mới
+                    data.categories.forEach(category => {
+                        const option = document.createElement('option');
+                        option.value = category.url;
+                        option.textContent = category.name;
+                        select.appendChild(option);
+                    });
+                    
+                    // Hiển thị container
+                    categoriesContainer.style.display = 'block';
+                    
+                    // Thông báo thành công
+                    showSuccessMessage(categoriesContainer, `Đã tải ${data.total} danh mục thành công!`);
+                    
+                } else {
+                    alert(`Lỗi khi tải danh mục: ${data.message}`);
+                }
+            })
+            .catch(error => {
+                // Enable lại button
+                button.disabled = false;
+                button.innerHTML = '<i class="bi bi-list-ul"></i> Tải danh sách danh mục';
+                
+                alert(`Lỗi kết nối: ${error.message}`);
+                console.error('Error:', error);
+            });
+        }
+
+        // Hàm tải danh sách danh mục Fotek (cho chế độ series)
+        function loadFotekCategoriesForSeries() {
+            const button = document.getElementById('load-categories-for-series-btn');
+            const select = document.getElementById('category-for-series');
+            
+            // Disable button và hiển thị loading
+            button.disabled = true;
+            button.innerHTML = '<i class="bi bi-hourglass-split"></i> Đang tải...';
+            
+            // Gọi API lấy danh sách danh mục
+            fetch('/get-fotek-categories')
+            .then(response => response.json())
+            .then(data => {
+                // Enable lại button
+                button.disabled = false;
+                button.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Tải danh mục';
+                
+                if (data.success) {
+                    // Xóa options cũ
+                    select.innerHTML = '<option value="">-- Chọn danh mục --</option>';
+                    
+                    // Thêm options mới
+                    data.categories.forEach(category => {
+                        const option = document.createElement('option');
+                        option.value = category.url;
+                        option.textContent = category.name;
+                        option.dataset.categoryName = category.name;
+                        select.appendChild(option);
+                    });
+                    
+                    // Thông báo thành công
+                    showSuccessMessage(button.parentElement, `Đã tải ${data.total} danh mục!`);
+                    
+                } else {
+                    alert(`Lỗi khi tải danh mục: ${data.message}`);
+                }
+            })
+            .catch(error => {
+                // Enable lại button
+                button.disabled = false;
+                button.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Tải danh mục';
+                
+                alert(`Lỗi kết nối: ${error.message}`);
+                console.error('Error:', error);
+            });
+        }
+
+        // Hàm tải series trong danh mục
+        function loadSeriesInCategory() {
+            const categorySelect = document.getElementById('category-for-series');
+            const seriesContainer = document.getElementById('series-container');
+            const seriesList = document.getElementById('selected-series-list');
+            const seriesInfo = document.getElementById('series-info');
+            const seriesCountInfo = document.getElementById('series-count-info');
+            
+            const selectedCategory = categorySelect.selectedOptions[0];
+            if (!selectedCategory || !selectedCategory.value) {
+                seriesContainer.style.display = 'none';
+                return;
+            }
+            
+            const categoryUrl = selectedCategory.value;
+            const categoryName = selectedCategory.dataset.categoryName;
+            
+            // Hiển thị loading trong series list
+            seriesList.innerHTML = '<option disabled>Đang tải series...</option>';
+            seriesContainer.style.display = 'block';
+            seriesInfo.style.display = 'none';
+            
+            // Gọi API lấy series trong danh mục
+            fetch('/get-fotek-series', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    category_url: categoryUrl,
+                    category_name: categoryName
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Xóa options cũ
+                    seriesList.innerHTML = '';
+                    
+                    // Thêm options mới
+                    data.series.forEach(series => {
+                        const option = document.createElement('option');
+                        option.value = series.url;
+                        option.textContent = series.name;
+                        option.dataset.seriesData = JSON.stringify(series);
+                        seriesList.appendChild(option);
+                    });
+                    
+                    // Hiển thị thông tin
+                    seriesCountInfo.textContent = `Tìm thấy ${data.total} series trong danh mục "${categoryName}"`;
+                    seriesInfo.style.display = 'block';
+                    
+                } else {
+                    seriesList.innerHTML = '<option disabled>Không tìm thấy series nào</option>';
+                    alert(`Lỗi khi tải series: ${data.message}`);
+                }
+            })
+            .catch(error => {
+                seriesList.innerHTML = '<option disabled>Lỗi khi tải series</option>';
+                alert(`Lỗi kết nối: ${error.message}`);
+                console.error('Error:', error);
+            });
+        }
+
+        // Hàm helper hiển thị thông báo thành công
+        function showSuccessMessage(container, message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-success mt-2';
+            alertDiv.innerHTML = `<i class="bi bi-check-circle-fill me-2"></i>${message}`;
+            container.appendChild(alertDiv);
+            
+            // Tự động xóa thông báo sau 3 giây
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.parentNode.removeChild(alertDiv);
+                }
+            }, 3000);
+        }
+
+        // === MISUMI CRAWLER FUNCTIONS ===
+        
+        // Global variables để lưu dữ liệu MISUMI
+        let misumiCategories = [];
+        let misumiSubcategories = [];
+        let misumiBrands = [];
+        
+        // Hàm load cấu trúc danh mục MISUMI
+        function loadMisumiCategories() {
+            const button = document.getElementById('load-misumi-categories-btn');
+            const loadingDiv = document.getElementById('categories-loading');
+            const step2Card = document.getElementById('step2-card');
+            
+            // Hiển thị loading
+            button.disabled = true;
+            button.innerHTML = '<i class="bi bi-hourglass-split"></i> Đang tải...';
+            loadingDiv.style.display = 'block';
+            
+            // Gọi API
+            fetch('/load-misumi-categories')
+            .then(response => response.json())
+            .then(data => {
+                button.disabled = false;
+                button.innerHTML = '<i class="bi bi-cloud-download"></i> Tải cấu trúc danh mục MISUMI';
+                loadingDiv.style.display = 'none';
+                
+                if (data.success) {
+                    // Kiểm tra và validate data.categories
+                    if (data.categories && Array.isArray(data.categories)) {
+                    misumiCategories = data.categories;
+                    
+                    // Populate main categories
+                    const mainCategoriesSelect = document.getElementById('main-categories');
+                    mainCategoriesSelect.innerHTML = '';
+                    
+                    misumiCategories.forEach(category => {
+                        const option = document.createElement('option');
+                        option.value = category.url;
+                        option.textContent = category.name;
+                        option.dataset.categoryData = JSON.stringify(category);
+                        mainCategoriesSelect.appendChild(option);
+                    });
+                    
+                    // Hiển thị step 2
+                    step2Card.style.display = 'block';
+                    
+                    // Thông báo thành công
+                    showAlert('success', `Đã tải thành công ${misumiCategories.length} danh mục chính!`);
+                    
+                    } else {
+                        showAlert('error', 'Dữ liệu danh mục không hợp lệ hoặc rỗng');
+                        console.error('Invalid categories data:', data.categories);
+                    }
+                } else {
+                    showAlert('error', `Lỗi khi tải danh mục: ${data.message}`);
+                }
+            })
+            .catch(error => {
+                button.disabled = false;
+                button.innerHTML = '<i class="bi bi-cloud-download"></i> Tải cấu trúc danh mục MISUMI';
+                loadingDiv.style.display = 'none';
+                
+                showAlert('error', `Lỗi kết nối: ${error.message}`);
+                console.error('Error:', error);
+            });
+        }
+        
+        // Hàm load danh mục con
+        function loadSubcategories() {
+            const mainCategoriesSelect = document.getElementById('main-categories');
+            const subCategoriesSelect = document.getElementById('sub-categories');
+            const selectBrandsBtn = document.getElementById('select-brands-btn');
+            
+            const selectedOption = mainCategoriesSelect.selectedOptions[0];
+            if (!selectedOption) {
+                subCategoriesSelect.innerHTML = '<option disabled>Vui lòng chọn danh mục chính trước</option>';
+                selectBrandsBtn.disabled = true;
+                return;
+            }
+            
+            const categoryUrl = selectedOption.value;
+            
+            // Hiển thị loading
+            subCategoriesSelect.innerHTML = '<option disabled>Đang tải danh mục con...</option>';
+            selectBrandsBtn.disabled = true;
+            
+            // Gọi API load subcategories
+            fetch('/load-misumi-subcategories', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    category_url: categoryUrl
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    misumiSubcategories = data.subcategories;
+                    
+                    // Populate subcategories
+                    subCategoriesSelect.innerHTML = '';
+                    
+                    misumiSubcategories.forEach(subcategory => {
+                        const option = document.createElement('option');
+                        option.value = subcategory.url;
+                        option.textContent = `[${subcategory.type}] ${subcategory.name}`;
+                        option.dataset.subcategoryData = JSON.stringify(subcategory);
+                        subCategoriesSelect.appendChild(option);
+                    });
+                    
+                    selectBrandsBtn.disabled = false;
+                    
+                    showAlert('success', `Đã tải ${misumiSubcategories.length} danh mục con!`);
+                    
+                } else {
+                    subCategoriesSelect.innerHTML = '<option disabled>Không thể tải danh mục con</option>';
+                    showAlert('error', `Lỗi khi tải danh mục con: ${data.message}`);
+                }
+            })
+            .catch(error => {
+                subCategoriesSelect.innerHTML = '<option disabled>Lỗi khi tải danh mục con</option>';
+                showAlert('error', `Lỗi kết nối: ${error.message}`);
+                console.error('Error:', error);
+            });
+        }
+        
+        // Hàm chuyển đến bước chọn nhãn hiệu
+        function proceedToBrandSelection() {
+            const subCategoriesSelect = document.getElementById('sub-categories');
+            const selectedSubcategories = Array.from(subCategoriesSelect.selectedOptions);
+            
+            if (selectedSubcategories.length === 0) {
+                showAlert('warning', 'Vui lòng chọn ít nhất một danh mục con!');
+                return;
+            }
+            
+            // Hiển thị step 3 và cập nhật summary
+            const step3Card = document.getElementById('step3-card');
+            const summaryDiv = document.getElementById('selection-summary');
+            
+            step3Card.style.display = 'block';
+            summaryDiv.style.display = 'block';
+            
+            // Cập nhật summary
+            const mainCategoryName = document.getElementById('main-categories').selectedOptions[0].textContent;
+            const subCategoryNames = selectedSubcategories.map(opt => opt.textContent).join(', ');
+            
+            document.getElementById('selected-main-category').textContent = mainCategoryName;
+            document.getElementById('selected-sub-categories').textContent = subCategoryNames;
+            
+            // Load brands cho danh mục đầu tiên được chọn
+            loadBrandsForSubcategory(selectedSubcategories[0].value);
+        }
+        
+        // Hàm load nhãn hiệu cho danh mục con
+        function loadBrandsForSubcategory(subcategoryUrl) {
+            const brandsLoading = document.getElementById('brands-loading');
+            const brandsContainer = document.getElementById('brands-container');
+            const brandsList = document.getElementById('brand-list');
+            
+            // Hiển thị loading
+            brandsLoading.style.display = 'block';
+            brandsContainer.style.display = 'none';
+            
+            // Gọi API load brands
+            fetch('/load-misumi-brands', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    subcategory_url: subcategoryUrl
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                brandsLoading.style.display = 'none';
+                
+                if (data.success) {
+                    misumiBrands = data.brands;
+                    
+                    // Populate brands
+                    brandsList.innerHTML = '';
+                    
+                    misumiBrands.forEach(brand => {
+                        const option = document.createElement('option');
+                        option.value = brand.value;
+                        option.textContent = brand.name;
+                        option.dataset.brandData = JSON.stringify(brand);
+                        brandsList.appendChild(option);
+                    });
+                    
+                    brandsContainer.style.display = 'block';
+                    
+                    // Enable start button when brands are selected
+                    brandsList.addEventListener('change', function() {
+                        const startBtn = document.getElementById('start-crawl-btn');
+                        startBtn.disabled = this.selectedOptions.length === 0;
+                        
+                        // Update summary
+                        const selectedBrands = Array.from(this.selectedOptions).map(opt => opt.textContent);
+                        document.getElementById('selected-brands').textContent = selectedBrands.join(', ');
+                    });
+                    
+                    showAlert('success', `Đã tải ${misumiBrands.length} nhãn hiệu!`);
+                    
+                } else {
+                    brandsContainer.style.display = 'block';
+                    brandsList.innerHTML = '<option disabled>Không tìm thấy nhãn hiệu nào</option>';
+                    showAlert('error', `Lỗi khi tải nhãn hiệu: ${data.message}`);
+                }
+            })
+            .catch(error => {
+                brandsLoading.style.display = 'none';
+                brandsContainer.style.display = 'block';
+                brandsList.innerHTML = '<option disabled>Lỗi khi tải nhãn hiệu</option>';
+                showAlert('error', `Lỗi kết nối: ${error.message}`);
+                console.error('Error:', error);
+            });
+        }
+        
+        // Hàm bắt đầu cào dữ liệu MISUMI
+        function startMisumiCrawl() {
+            const mainCategoriesSelect = document.getElementById('main-categories');
+            const subCategoriesSelect = document.getElementById('sub-categories');
+            const brandsSelect = document.getElementById('brand-list');
+            const startBtn = document.getElementById('start-crawl-btn');
+            
+            const selectedMainCategory = mainCategoriesSelect.selectedOptions[0];
+            const selectedSubcategories = Array.from(subCategoriesSelect.selectedOptions);
+            const selectedBrands = Array.from(brandsSelect.selectedOptions);
+            
+            if (!selectedMainCategory || selectedSubcategories.length === 0 || selectedBrands.length === 0) {
+                showAlert('warning', 'Vui lòng hoàn tất tất cả các lựa chọn!');
+                return;
+            }
+            
+            // Disable button
+            startBtn.disabled = true;
+            startBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Đang cào dữ liệu...';
+            
+            // Chuẩn bị dữ liệu
+            const crawlData = {
+                main_category: {
+                    name: selectedMainCategory.textContent,
+                    url: selectedMainCategory.value
+                },
+                subcategories: selectedSubcategories.map(opt => ({
+                    name: opt.textContent,
+                    url: opt.value
+                })),
+                brands: selectedBrands.map(opt => ({
+                    name: opt.textContent,
+                    value: opt.value
+                }))
+            };
+            
+            // Gọi API cào dữ liệu
+            fetch('/start-misumi-crawl', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(crawlData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                startBtn.disabled = false;
+                startBtn.innerHTML = '<i class="bi bi-play-circle"></i> Bắt đầu cào dữ liệu';
+                
+                if (data.success) {
+                    // Hiển thị kết quả
+                    const resultDiv = document.getElementById('misumi-result');
+                    const resultMessage = document.getElementById('misumi-result-message');
+                    const downloadLink = document.getElementById('misumi-download-link');
+                    
+                    resultMessage.textContent = data.message;
+                    downloadLink.href = data.download_url;
+                    resultDiv.style.display = 'block';
+                    
+                } else {
+                    // Hiển thị lỗi
+                    const errorDiv = document.getElementById('misumi-error');
+                    const errorMessage = document.getElementById('misumi-error-message');
+                    
+                    errorMessage.textContent = data.message;
+                    errorDiv.style.display = 'block';
+                }
+            })
+            .catch(error => {
+                startBtn.disabled = false;
+                startBtn.innerHTML = '<i class="bi bi-play-circle"></i> Bắt đầu cào dữ liệu';
+                
+                showAlert('error', `Lỗi kết nối: ${error.message}`);
+                console.error('Error:', error);
+            });
+        }
+        
+        // Hàm helper hiển thị alert
+        function showAlert(type, message) {
+            const alertClass = type === 'success' ? 'alert-success' : 
+                             type === 'warning' ? 'alert-warning' : 'alert-danger';
+            
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert ${alertClass} alert-dismissible fade show`;
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            // Thêm vào đầu container
+            const container = document.querySelector('#misumi-crawler .form-container');
+            container.insertBefore(alertDiv, container.firstChild);
+            
+            // Tự động xóa sau 5 giây
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 5000);
         }
     </script>
 </body>

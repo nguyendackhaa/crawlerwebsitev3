@@ -28,6 +28,8 @@ from app.baa_crawler import BaaProductCrawler
 from app.product_categorizer import ProductCategorizer
 from app.resize import ImageResizer
 from app.webp_converter import WebPConverter
+from app.crawlfotek import CrawlFotek
+# from app.misumicrawler import MisumiCrawler  # File đã bị xóa
 
 main_bp = Blueprint('main', __name__)
 
@@ -2614,13 +2616,21 @@ def create_category_images_report(results, output_file):
 def crawl_codienhaiau():
     try:
         category_urls = request.form.get('category_urls', '').strip()
+        selected_fields = request.form.getlist('selected_fields')  # Lấy danh sách trường được chọn
         
         if not category_urls:
             flash('Vui lòng nhập ít nhất một URL danh mục.', 'error')
             return redirect(url_for('main.index'))
         
-        # Tạo crawler và xử lý danh mục
-        crawler = CategoryCrawler(socketio, upload_folder=current_app.config['UPLOAD_FOLDER'])
+        if not selected_fields:
+            flash('Vui lòng chọn ít nhất một trường dữ liệu cần cào.', 'error')
+            return redirect(url_for('main.index'))
+        
+        # Log thông tin về các trường được chọn
+        print(f"[CODIENHAIAU] Các trường được chọn để cào: {selected_fields}")
+        
+        # Tạo crawler và xử lý danh mục với các trường được chọn
+        crawler = CategoryCrawler(socketio, upload_folder=current_app.config['UPLOAD_FOLDER'], selected_fields=selected_fields)
         success, message, zip_path = crawler.process_codienhaiau_categories(category_urls)
         
         if success:
@@ -3315,56 +3325,169 @@ def download_baa_result(filename):
 
 @main_bp.route('/crawl-baa-old', methods=['POST'])
 def crawl_baa_old():
+    """API endpoint cũ để crawl BAA.vn (deprecated)"""
     try:
-        # Lấy thông tin từ form
-        category_urls = request.form.get('category_urls', '').strip()
-        if not category_urls:
-            flash('Vui lòng nhập ít nhất một URL danh mục hoặc sản phẩm.', 'error')
-            return redirect(url_for('main.index'))
+        # Get Lấy danh sách URLs từ form
+        category_urls_text = request.form.get('category_urls', '').strip()
         
-        # Lấy tham số tùy chọn
-        max_workers = int(request.form.get('max_workers', 8))
-        max_retries = int(request.form.get('max_retries', 3))
+        if not category_urls_text:
+            return jsonify({
+                'success': False,
+                'message': 'Vui lòng nhập danh sách URL danh mục'
+            })
         
-        # Giới hạn giá trị hợp lệ
-        max_workers = min(max(1, max_workers), 16)  # Từ 1-16 luồng
-        max_retries = min(max(1, max_retries), 5)   # Từ 1-5 lần thử lại
+        # Khởi tạo CategoryCrawler
+        crawler = CategoryCrawler(socketio, current_app.config['UPLOAD_FOLDER'])
         
-        # Log thông tin
-        print(f"Bắt đầu cào dữ liệu với {max_workers} luồng, {max_retries} lần thử lại")
+        # Xử lý URL danh mục BAA.vn
+        success, message, zip_path = crawler.process_baa_categories(category_urls_text)
         
-        url_list = [u.strip() for u in category_urls.splitlines() if u.strip()]
-        crawler = BaaProductCrawler(output_root=current_app.config['UPLOAD_FOLDER'], 
-                                   max_workers=max_workers, 
-                                   max_retries=max_retries)
-        products, result_dir = crawler.crawl_products(url_list)
-        
-        # Nén kết quả và trả về link download
-        zip_path = result_dir + '.zip'
-        if os.path.exists(zip_path):
-            download_url = url_for('main.download_file', filename=os.path.basename(zip_path))
-            flash(f'Đã cào xong dữ liệu {len(products)} sản phẩm. <a href="{download_url}" class="btn btn-primary mt-2">Tải xuống kết quả</a>', 'success')
+        if success and zip_path:
+            zip_filename = os.path.basename(zip_path)
+            download_url = url_for('main.download_baa_result', filename=zip_filename)
             
-            # Tạo dữ liệu để hiển thị trên giao diện
-            zip_size = os.path.getsize(zip_path) / (1024 * 1024)  # Kích thước MB
-            products_count = len(products)
-            stats = {
-                'Tổng sản phẩm': products_count,
-                'Thời gian xử lý': f"{os.path.basename(result_dir).split('_')[-1]} giây",
-                'Kích thước file': f"{zip_size:.2f} MB"
-            }
-            
-            # Trả về trang kết quả với đường dẫn tải xuống và thống kê
-            return render_template('crawler_result.html', 
-                                  download_url=download_url,
-                                  zip_filename=os.path.basename(zip_path),
-                                  stats=stats,
-                                  products_count=products_count)
+            return jsonify({
+                'success': True,
+                'message': message,
+                'download_url': download_url,
+                'filename': zip_filename
+            })
         else:
-            flash(f'Đã cào xong dữ liệu {len(products)} sản phẩm nhưng không tạo được file ZIP.', 'warning')
-            return redirect(url_for('main.index'))
+            return jsonify({
+                'success': False,
+                'message': message or 'Có lỗi xảy ra khi xử lý'
+            })
     
     except Exception as e:
+        error_message = str(e)
+        print(f"Lỗi trong /crawl-baa-old: {error_message}")
         traceback.print_exc()
-        flash(f'Lỗi: {str(e)}', 'error')
-        return redirect(url_for('main.index'))
+        return jsonify({
+            'success': False,
+            'message': f'Lỗi: {error_message}'
+        })
+
+@main_bp.route('/crawl-fotek', methods=['POST'])
+def crawl_fotek():
+    """API endpoint để cào dữ liệu từ Fotek.com.tw"""
+    try:
+        # API key Gemini đã được cung cấp
+        gemini_api_key = "AIzaSyBEUiHyq0bBFW_6TRF9g-pmjG3_jQfPpBY"
+        
+        # Lấy tham số từ request
+        data = request.get_json() if request.is_json else {}
+        priority_mode = data.get('priority_mode', False)
+        priority_categories = data.get('priority_categories', [])
+        selected_series = data.get('selected_series', [])
+        
+        # Khởi tạo CrawlFotek với Gemini API
+        crawler = CrawlFotek(
+            socketio=socketio, 
+            upload_folder=current_app.config['UPLOAD_FOLDER'],
+            gemini_api_key=gemini_api_key
+        )
+        
+        # Bắt đầu quá trình crawl
+        success, message, zip_path = crawler.process_fotek_crawl(
+            priority_mode=priority_mode,
+            priority_categories=priority_categories,
+            selected_series=selected_series
+        )
+        
+        if success and zip_path:
+            zip_filename = os.path.basename(zip_path)
+            download_url = url_for('main.download_file', filename=zip_filename)
+            
+            return jsonify({
+                'success': True,
+                'message': message,
+                'download_url': download_url,
+                'filename': zip_filename
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': message or 'Có lỗi xảy ra khi crawl Fotek'
+            })
+    
+    except Exception as e:
+        error_message = str(e)
+        print(f"Lỗi trong /crawl-fotek: {error_message}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': f'Lỗi: {error_message}'
+        })
+
+@main_bp.route('/get-fotek-categories', methods=['GET'])
+def get_fotek_categories():
+    """API endpoint để lấy danh sách danh mục Fotek có sẵn"""
+    try:
+        # API key Gemini đã được cung cấp
+        gemini_api_key = "AIzaSyBEUiHyq0bBFW_6TRF9g-pmjG3_jQfPpBY"
+        
+        # Khởi tạo CrawlFotek
+        crawler = CrawlFotek(
+            socketio=None,  # Không cần socketio cho việc lấy danh sách
+            upload_folder=current_app.config['UPLOAD_FOLDER'],
+            gemini_api_key=gemini_api_key
+        )
+        
+        # Lấy danh sách danh mục
+        result = crawler.get_available_categories()
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        error_message = str(e)
+        print(f"Lỗi trong /get-fotek-categories: {error_message}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': f'Lỗi: {error_message}'
+        })
+
+@main_bp.route('/get-fotek-series', methods=['POST'])
+def get_fotek_series():
+    """API endpoint để lấy danh sách series trong một danh mục cụ thể"""
+    try:
+        # API key Gemini đã được cung cấp
+        gemini_api_key = "AIzaSyBEUiHyq0bBFW_6TRF9g-pmjG3_jQfPpBY"
+        
+        # Lấy category_url từ request
+        data = request.get_json() if request.is_json else {}
+        category_url = data.get('category_url', '')
+        category_name = data.get('category_name', '')
+        
+        if not category_url:
+            return jsonify({
+                'success': False,
+                'message': 'Vui lòng cung cấp category_url'
+            })
+        
+        # Khởi tạo CrawlFotek
+        crawler = CrawlFotek(
+            socketio=None,  # Không cần socketio cho việc lấy danh sách
+            upload_folder=current_app.config['UPLOAD_FOLDER'],
+            gemini_api_key=gemini_api_key
+        )
+        
+        # Lấy danh sách series trong danh mục
+        result = crawler.get_series_in_category(category_url)
+        
+        # Thêm category_name vào mỗi series để sử dụng sau này
+        if result['success']:
+            for series in result['series']:
+                series['category_name'] = category_name
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        error_message = str(e)
+        print(f"Lỗi trong /get-fotek-series: {error_message}")
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': f'Lỗi: {error_message}'
+        })
+
