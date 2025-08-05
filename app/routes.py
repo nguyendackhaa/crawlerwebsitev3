@@ -1,15 +1,19 @@
 import os
+import logging
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, send_from_directory, jsonify, session
 from werkzeug.utils import secure_filename
 import tempfile
 import traceback
+
+# Set up logger
+logger = logging.getLogger(__name__)
 from app.crawler import extract_category_links, scrape_product_info, is_product_url, get_product_info, download_autonics_images, download_autonics_jpg_images, download_product_documents, extract_product_urls, is_category_url, download_baa_product_images, download_baa_product_images_fixed, extract_product_price, debug_extract_products_from_url
 import pandas as pd
 from openpyxl.utils import get_column_letter
 from datetime import datetime
 from flask import current_app
 from app import utils, socketio
-from app.category_crawler import CategoryCrawler
+
 import time
 import openpyxl
 import re
@@ -28,7 +32,8 @@ from app.baa_crawler import BaaProductCrawler
 from app.product_categorizer import ProductCategorizer
 from app.resize import ImageResizer
 from app.webp_converter import WebPConverter
-from app.crawlfotek import CrawlFotek
+from app.crawlerAutonics import AutonicsCrawler
+
 # from app.misumicrawler import MisumiCrawler  # File đã bị xóa
 
 main_bp = Blueprint('main', __name__)
@@ -1263,7 +1268,7 @@ def extract_product_code_from_url(url):
         # 2. Pattern cho URL HaiphongTech: ... /bo-dieu-khien-nhiet-do-e5cc-rx2asm-800
 
         # Cố gắng trích xuất mã từ URL BAA.vn dạng URL sản phẩm
-        baa_pattern = r'(?:san-pham\/.*?)(?:autonics|omron|ls|mitsubishi|fuji|idec|keyence|optex-fa|optex|panasonic|hanyoung|honeywell|koino|ckd|cikachi|chint|mean-well|weintek|eaton|lc|lsis|azbil|riko|coel|power|siemens|schneider|delta|hager|tele|taian|tend|socomec|leuze|sick|takex|heyi|trans|fotek|anly|winstar|nikkon|apator|bulgin|finder|benedict|protek|sanyu|nowox|anly|abb|ginice|wattstopper|bristoleye|hubbell|contrinex|elco|turck|banner|wenglor|rockwell|omron-movisens|st|oez|hfr|himel|yaskawa|futek|metz-connect|contactor|relay|circuit-protector|autonics-counter-timer|autonics-digital-panel-meter|panasonic-measurement).*?[_-]([a-zA-Z0-9\-]+?)(?:_|\-|$)'
+        baa_pattern = r'(?:san-pham\/.*?)(?:autonics|omron|ls|mitsubishi|fuji|idec|keyence|optex-fa|optex|panasonic|hanyoung|honeywell|koino|ckd|cikachi|chint|mean-well|weintek|eaton|lc|lsis|azbil|riko|coel|power|siemens|schneider|delta|hager|tele|taian|tend|socomec|leuze|sick|takex|heyi|trans|anly|winstar|nikkon|apator|bulgin|finder|benedict|protek|sanyu|nowox|anly|abb|ginice|wattstopper|bristoleye|hubbell|contrinex|elco|turck|banner|wenglor|rockwell|omron-movisens|st|oez|hfr|himel|yaskawa|futek|metz-connect|contactor|relay|circuit-protector|autonics-counter-timer|autonics-digital-panel-meter|panasonic-measurement).*?[_-]([a-zA-Z0-9\-]+?)(?:_|\-|$)'
         match = re.search(baa_pattern, url, re.IGNORECASE)
         if match:
             product_code = match.group(1)
@@ -2612,44 +2617,11 @@ def create_category_images_report(results, output_file):
         print(f"Lỗi khi tạo báo cáo tổng hợp: {str(e)}")
         return False
 
-@main_bp.route('/crawl-codienhaiau', methods=['POST'])
-def crawl_codienhaiau():
-    try:
-        category_urls = request.form.get('category_urls', '').strip()
-        selected_fields = request.form.getlist('selected_fields')  # Lấy danh sách trường được chọn
-        
-        if not category_urls:
-            flash('Vui lòng nhập ít nhất một URL danh mục.', 'error')
-            return redirect(url_for('main.index'))
-        
-        if not selected_fields:
-            flash('Vui lòng chọn ít nhất một trường dữ liệu cần cào.', 'error')
-            return redirect(url_for('main.index'))
-        
-        # Log thông tin về các trường được chọn
-        print(f"[CODIENHAIAU] Các trường được chọn để cào: {selected_fields}")
-        
-        # Tạo crawler và xử lý danh mục với các trường được chọn
-        crawler = CategoryCrawler(socketio, upload_folder=current_app.config['UPLOAD_FOLDER'], selected_fields=selected_fields)
-        success, message, zip_path = crawler.process_codienhaiau_categories(category_urls)
-        
-        if success:
-            filename = os.path.basename(zip_path) if zip_path else session.get('last_download', '')
-            if filename:
-                # Lưu thông báo thành công và URL tải xuống
-                flash(message, 'success')
-                return redirect(url_for('main.download_file', filename=filename))
-            else:
-                flash('Đã xử lý thành công nhưng không tìm thấy file để tải xuống.', 'warning')
-                return redirect(url_for('main.index'))
-        else:
-            flash(f'Lỗi: {message}', 'error')
-            return redirect(url_for('main.index'))
-        
-    except Exception as e:
-        traceback.print_exc()
-        flash(f'Lỗi không xác định: {str(e)}', 'error')
-        return redirect(url_for('main.index'))
+# @main_bp.route('/crawl-codienhaiau', methods=['POST'])
+# def crawl_codienhaiau():
+#     # DISABLED: CategoryCrawler đã bị xóa
+#     flash('Chức năng này hiện không khả dụng.', 'warning')
+#     return redirect(url_for('main.index'))
 
 @main_bp.route('/crawl-baa', methods=['POST'])
 @progress_tracker(name="Cào dữ liệu BAA.vn", total_steps=100, verbose=True)
@@ -2749,32 +2721,10 @@ def crawl_baa(progress: TerminalProgressBar):
         flash(f'Lỗi: {str(e)}', 'error')
         return redirect(url_for('main.index'))
 
-@main_bp.route('/scrap-category-products', methods=['POST'])
-def scrap_category_products():
-    try:
-        category_urls = request.form.get('category_urls', '').strip()
-        
-        if not category_urls:
-            return jsonify({'status': 'error', 'message': 'Vui lòng nhập ít nhất một URL danh mục.'})
-        
-        # Tạo crawler và xử lý danh mục
-        crawler = CategoryCrawler(socketio, upload_folder=current_app.config['UPLOAD_FOLDER'])
-        success, message = crawler.process_category_urls(category_urls)
-        
-        if success:
-            filename = session.get('last_download', '')
-            if filename:
-                return jsonify({
-                    'status': 'success',
-                    'message': message,
-                    'download': filename
-                })
-        
-        return jsonify({'status': 'error', 'message': message})
-        
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({'status': 'error', 'message': f'Lỗi không xác định: {str(e)}'})
+# @main_bp.route('/scrap-category-products', methods=['POST'])
+# def scrap_category_products():
+#     # DISABLED: CategoryCrawler đã bị xóa
+#     return jsonify({'status': 'error', 'message': 'Chức năng này hiện không khả dụng.'})
 
 @main_bp.route('/filter-product-types', methods=['POST'])
 def filter_product_types():
@@ -3323,171 +3273,208 @@ def download_baa_result(filename):
         flash(f'Lỗi khi tải file: {str(e)}', 'error')
         return redirect(url_for('main.index'))
 
-@main_bp.route('/crawl-baa-old', methods=['POST'])
-def crawl_baa_old():
-    """API endpoint cũ để crawl BAA.vn (deprecated)"""
+# @main_bp.route('/crawl-baa-old', methods=['POST'])
+# def crawl_baa_old():
+#     # DISABLED: CategoryCrawler đã bị xóa
+#     return jsonify({
+#         'success': False,
+#         'message': 'Chức năng này hiện không khả dụng.'
+#     })
+
+@main_bp.route('/autonics')
+def autonics_crawler():
+    """Trang giao diện Autonics Crawler"""
+    return render_template('autonics_crawler.html')
+
+@main_bp.route('/crawl-autonics', methods=['POST'])
+def crawl_autonics():
+    """API endpoint để cào dữ liệu Autonics"""
     try:
-        # Get Lấy danh sách URLs từ form
-        category_urls_text = request.form.get('category_urls', '').strip()
+        # Lấy dữ liệu từ request
+        data = request.get_json()
         
-        if not category_urls_text:
+        if not data or 'category_urls' not in data:
             return jsonify({
                 'success': False,
-                'message': 'Vui lòng nhập danh sách URL danh mục'
-            })
+                'message': 'Thiếu danh sách URL categories'
+            }), 400
         
-        # Khởi tạo CategoryCrawler
-        crawler = CategoryCrawler(socketio, current_app.config['UPLOAD_FOLDER'])
+        category_urls = data['category_urls']
         
-        # Xử lý URL danh mục BAA.vn
-        success, message, zip_path = crawler.process_baa_categories(category_urls_text)
+        # Validate URLs
+        if not isinstance(category_urls, list) or not category_urls:
+            return jsonify({
+                'success': False,
+                'message': 'Danh sách URL categories không hợp lệ'
+            }), 400
         
-        if success and zip_path:
-            zip_filename = os.path.basename(zip_path)
-            download_url = url_for('main.download_baa_result', filename=zip_filename)
-            
+        # Validate URLs format
+        valid_urls = []
+        for url in category_urls:
+            url = url.strip()
+            if url and ('autonics.com' in url):
+                valid_urls.append(url)
+        
+        if not valid_urls:
+            return jsonify({
+                'success': False,
+                'message': 'Không có URL Autonics hợp lệ nào'
+            }), 400
+        
+        # Khởi tạo crawler với Socket.IO
+        crawler = AutonicsCrawler(socketio=socketio)
+        
+        # Chạy crawler trong background thread
+        def run_crawler():
+            try:
+                result_dir = crawler.crawl_products(valid_urls)
+                
+                # Emit kết quả cuối cùng
+                socketio.emit('crawler_completed', {
+                    'success': True,
+                    'message': 'Cào dữ liệu Autonics hoàn thành!',
+                    'result_dir': result_dir,
+                    'stats': crawler.stats
+                })
+                
+            except Exception as e:
+                import traceback
+                error_details = traceback.format_exc()
+                logger.error(f"Lỗi crawler Autonics: {str(e)}")
+                logger.error(error_details)
+                
+                socketio.emit('crawler_error', {
+                    'success': False,
+                    'message': f'Lỗi khi cào dữ liệu: {str(e)}',
+                    'error_details': error_details
+                })
+        
+        # Start crawler trong thread riêng
+        import threading
+        crawler_thread = threading.Thread(target=run_crawler)
+        crawler_thread.daemon = True
+        crawler_thread.start()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Đã bắt đầu cào dữ liệu từ {len(valid_urls)} category URLs',
+            'category_count': len(valid_urls)
+        })
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Lỗi API crawl autonics: {str(e)}")
+        logger.error(error_details)
+        
+        return jsonify({
+            'success': False,
+            'message': f'Lỗi API: {str(e)}',
+            'error_details': error_details
+        }), 500
+
+@main_bp.route('/download-autonics-result/<path:folder_name>')
+def download_autonics_result(folder_name):
+    """Tải xuống kết quả Autonics crawler dưới dạng ZIP"""
+    try:
+        # Đường dẫn thư mục output autonics
+        autonics_output_dir = os.path.join(os.getcwd(), "output_autonics")
+        folder_path = os.path.join(autonics_output_dir, folder_name)
+        
+        # Kiểm tra thư mục tồn tại
+        if not os.path.exists(folder_path):
+            flash('Thư mục kết quả không tồn tại hoặc đã bị xóa', 'error')
+            return redirect(url_for('main.autonics_crawler'))
+        
+        # Tạo file ZIP
+        zip_filename = f"{folder_name}.zip"
+        zip_path = os.path.join(autonics_output_dir, zip_filename)
+        
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(folder_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, folder_path)
+                    zipf.write(file_path, arcname)
+        
+        return send_file(zip_path, as_attachment=True, download_name=zip_filename)
+        
+    except Exception as e:
+        print(f"Lỗi khi tạo ZIP: {str(e)}")
+        flash(f'Lỗi khi tạo file ZIP: {str(e)}', 'error')
+        return redirect(url_for('main.autonics_crawler'))
+
+@main_bp.route('/list-autonics-results')
+def list_autonics_results():
+    """API để lấy danh sách kết quả Autonics crawler"""
+    try:
+        autonics_output_dir = os.path.join(os.getcwd(), "output_autonics")
+        
+        if not os.path.exists(autonics_output_dir):
             return jsonify({
                 'success': True,
-                'message': message,
-                'download_url': download_url,
-                'filename': zip_filename
+                'results': []
             })
-        else:
-            return jsonify({
-                'success': False,
-                'message': message or 'Có lỗi xảy ra khi xử lý'
-            })
-    
+        
+        results = []
+        for item in os.listdir(autonics_output_dir):
+            item_path = os.path.join(autonics_output_dir, item)
+            if os.path.isdir(item_path):
+                # Đếm số categories và sản phẩm
+                category_count = 0
+                total_products = 0
+                total_images = 0
+                
+                for category_dir in os.listdir(item_path):
+                    category_path = os.path.join(item_path, category_dir)
+                    if os.path.isdir(category_path):
+                        category_count += 1
+                        
+                        # Đếm file Excel
+                        excel_files = [f for f in os.listdir(category_path) if f.endswith('.xlsx')]
+                        if excel_files:
+                            # Đọc Excel để đếm sản phẩm
+                            try:
+                                excel_path = os.path.join(category_path, excel_files[0])
+                                df = pd.read_excel(excel_path)
+                                total_products += len(df)
+                            except:
+                                pass
+                        
+                        # Đếm ảnh
+                        images_dir = os.path.join(category_path, "images")
+                        if os.path.exists(images_dir):
+                            images = [f for f in os.listdir(images_dir) if f.endswith('.webp')]
+                            total_images += len(images)
+                
+                # Lấy thông tin thời gian
+                stat = os.stat(item_path)
+                created_time = datetime.fromtimestamp(stat.st_ctime).strftime("%d/%m/%Y %H:%M")
+                
+                results.append({
+                    'folder_name': item,
+                    'created_time': created_time,
+                    'category_count': category_count,
+                    'product_count': total_products,
+                    'image_count': total_images
+                })
+        
+        # Sắp xếp theo thời gian tạo (mới nhất trước)
+        results.sort(key=lambda x: x['created_time'], reverse=True)
+        
+        return jsonify({
+            'success': True,
+            'results': results
+        })
+        
     except Exception as e:
-        error_message = str(e)
-        print(f"Lỗi trong /crawl-baa-old: {error_message}")
-        traceback.print_exc()
+        print(f"Lỗi khi lấy danh sách kết quả: {str(e)}")
         return jsonify({
             'success': False,
-            'message': f'Lỗi: {error_message}'
-        })
+            'message': f'Lỗi: {str(e)}'
+        }), 500
 
-@main_bp.route('/crawl-fotek', methods=['POST'])
-def crawl_fotek():
-    """API endpoint để cào dữ liệu từ Fotek.com.tw"""
-    try:
-        # API key Gemini đã được cung cấp
-        gemini_api_key = "AIzaSyBEUiHyq0bBFW_6TRF9g-pmjG3_jQfPpBY"
-        
-        # Lấy tham số từ request
-        data = request.get_json() if request.is_json else {}
-        priority_mode = data.get('priority_mode', False)
-        priority_categories = data.get('priority_categories', [])
-        selected_series = data.get('selected_series', [])
-        
-        # Khởi tạo CrawlFotek với Gemini API
-        crawler = CrawlFotek(
-            socketio=socketio, 
-            upload_folder=current_app.config['UPLOAD_FOLDER'],
-            gemini_api_key=gemini_api_key
-        )
-        
-        # Bắt đầu quá trình crawl
-        success, message, zip_path = crawler.process_fotek_crawl(
-            priority_mode=priority_mode,
-            priority_categories=priority_categories,
-            selected_series=selected_series
-        )
-        
-        if success and zip_path:
-            zip_filename = os.path.basename(zip_path)
-            download_url = url_for('main.download_file', filename=zip_filename)
-            
-            return jsonify({
-                'success': True,
-                'message': message,
-                'download_url': download_url,
-                'filename': zip_filename
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'message': message or 'Có lỗi xảy ra khi crawl Fotek'
-            })
-    
-    except Exception as e:
-        error_message = str(e)
-        print(f"Lỗi trong /crawl-fotek: {error_message}")
-        traceback.print_exc()
-        return jsonify({
-            'success': False,
-            'message': f'Lỗi: {error_message}'
-        })
 
-@main_bp.route('/get-fotek-categories', methods=['GET'])
-def get_fotek_categories():
-    """API endpoint để lấy danh sách danh mục Fotek có sẵn"""
-    try:
-        # API key Gemini đã được cung cấp
-        gemini_api_key = "AIzaSyBEUiHyq0bBFW_6TRF9g-pmjG3_jQfPpBY"
-        
-        # Khởi tạo CrawlFotek
-        crawler = CrawlFotek(
-            socketio=None,  # Không cần socketio cho việc lấy danh sách
-            upload_folder=current_app.config['UPLOAD_FOLDER'],
-            gemini_api_key=gemini_api_key
-        )
-        
-        # Lấy danh sách danh mục
-        result = crawler.get_available_categories()
-        
-        return jsonify(result)
-    
-    except Exception as e:
-        error_message = str(e)
-        print(f"Lỗi trong /get-fotek-categories: {error_message}")
-        traceback.print_exc()
-        return jsonify({
-            'success': False,
-            'message': f'Lỗi: {error_message}'
-        })
 
-@main_bp.route('/get-fotek-series', methods=['POST'])
-def get_fotek_series():
-    """API endpoint để lấy danh sách series trong một danh mục cụ thể"""
-    try:
-        # API key Gemini đã được cung cấp
-        gemini_api_key = "AIzaSyBEUiHyq0bBFW_6TRF9g-pmjG3_jQfPpBY"
-        
-        # Lấy category_url từ request
-        data = request.get_json() if request.is_json else {}
-        category_url = data.get('category_url', '')
-        category_name = data.get('category_name', '')
-        
-        if not category_url:
-            return jsonify({
-                'success': False,
-                'message': 'Vui lòng cung cấp category_url'
-            })
-        
-        # Khởi tạo CrawlFotek
-        crawler = CrawlFotek(
-            socketio=None,  # Không cần socketio cho việc lấy danh sách
-            upload_folder=current_app.config['UPLOAD_FOLDER'],
-            gemini_api_key=gemini_api_key
-        )
-        
-        # Lấy danh sách series trong danh mục
-        result = crawler.get_series_in_category(category_url)
-        
-        # Thêm category_name vào mỗi series để sử dụng sau này
-        if result['success']:
-            for series in result['series']:
-                series['category_name'] = category_name
-        
-        return jsonify(result)
-    
-    except Exception as e:
-        error_message = str(e)
-        print(f"Lỗi trong /get-fotek-series: {error_message}")
-        traceback.print_exc()
-        return jsonify({
-            'success': False,
-            'message': f'Lỗi: {error_message}'
-        })
+
 

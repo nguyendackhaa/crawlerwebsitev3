@@ -34,7 +34,7 @@ def create_app():
     
     # Khởi tạo SocketIO với ứng dụng Flask
     socketio.init_app(app, cors_allowed_origins="*")
-    
-# Đăng ký HoplongCrawler routes
+
+    # Đăng ký HoplongCrawler routes
     register_hoplong_routes(app, socketio)
     return app 
