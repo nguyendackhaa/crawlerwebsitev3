@@ -1,3 +1,14 @@
 {
-    "gemini_api_key": "AIzaSyBEUiHyq0bBFW_6TRF9g-pmjG3_jQfPpBY"
+    "gemini_api_key": "AIzaSyCSPAH_x5sWmDLGtxgn8VGqWHrVVta676o",
+    "max_workers": 4,
+    "request_delay": 1.0,
+    "batch_size": 100,
+    "output_dir": "production_output",
+    "auto_compress": true,
+    "enable_ai": true,
+    "request_timeout": 30,
+    "max_retries": 3,
+    "retry_delay": 2,
+    "production_mode": true,
+    "debug_mode": false
 }

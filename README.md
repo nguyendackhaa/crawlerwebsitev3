@@ -69,7 +69,7 @@ pip install -r requirements.txt
 
 1. Khởi động ứng dụng:
 
-cd CrawlerWebsitev2; python -m flask run
+cd CrawlerWebsitev3; python -m flask run
 
 
 ```

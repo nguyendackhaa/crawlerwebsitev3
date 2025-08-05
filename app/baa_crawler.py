@@ -132,7 +132,7 @@ def extract_product_series(url):
         supported_brands = [
             'qlight', 'autonics', 'sick', 'omron', 'keyence', 'pepperl', 'fuchs',
             'balluff', 'turck', 'banner', 'contrinex', 'schneider', 'siemens', 
-            'abb', 'mitsubishi', 'panasonic', 'hanyoung', 'fotek', 'idec',
+            'abb', 'mitsubishi', 'panasonic', 'hanyoung', 'idec',
             'phoenix', 'weidmuller', 'pilz', 'ifm', 'leuze', 'wenglor',
             'baumer', 'datalogic', 'cognex', 'keyence', 'festo'
         ]
