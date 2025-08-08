@@ -33,6 +33,7 @@ from app.product_categorizer import ProductCategorizer
 from app.resize import ImageResizer
 from app.webp_converter import WebPConverter
 from app.crawlerAutonics import AutonicsCrawler
+from app.crawlerOmron import OmronCrawler
 
 # from app.misumicrawler import MisumiCrawler  # File đã bị xóa
 
@@ -3469,6 +3470,205 @@ def list_autonics_results():
         
     except Exception as e:
         print(f"Lỗi khi lấy danh sách kết quả: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Lỗi: {str(e)}'
+        }), 500
+
+
+# ==================== OMRON CRAWLER ROUTES ====================
+
+@main_bp.route('/omron')
+def omron_crawler():
+    """Trang Omron Crawler"""
+    return render_template('omron_crawler.html')
+
+@main_bp.route('/crawl-omron', methods=['POST'])
+def crawl_omron():
+    """API endpoint để cào dữ liệu Omron"""
+    try:
+        # Lấy dữ liệu từ request
+        data = request.get_json()
+        
+        if not data or 'category_urls' not in data:
+            return jsonify({
+                'success': False,
+                'message': 'Thiếu danh sách URL categories'
+            }), 400
+        
+        category_urls = data['category_urls']
+        
+        # Validate URLs
+        if not isinstance(category_urls, list) or not category_urls:
+            return jsonify({
+                'success': False,
+                'message': 'Danh sách URL categories không hợp lệ'
+            }), 400
+        
+        # Validate URLs format
+        valid_urls = []
+        for url in category_urls:
+            url = url.strip()
+            if url and ('omron.co.uk' in url):
+                valid_urls.append(url)
+        
+        if not valid_urls:
+            return jsonify({
+                'success': False,
+                'message': 'Không có URL Omron hợp lệ nào'
+            }), 400
+        
+        # Khởi tạo crawler với Socket.IO và Gemini API
+        gemini_api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
+        crawler = OmronCrawler(socketio=socketio, gemini_api_key=gemini_api_key)
+        
+        # Chạy crawler trong background thread
+        def run_crawler():
+            try:
+                result_dir = crawler.crawl_products(valid_urls)
+                
+                # Emit kết quả cuối cùng
+                socketio.emit('crawler_completed', {
+                    'success': True,
+                    'message': 'Cào dữ liệu Omron hoàn thành!',
+                    'result_dir': result_dir,
+                    'stats': crawler.stats
+                })
+                
+            except Exception as e:
+                import traceback
+                error_details = traceback.format_exc()
+                logger.error(f"Lỗi crawler Omron: {str(e)}")
+                logger.error(error_details)
+                
+                socketio.emit('crawler_error', {
+                    'success': False,
+                    'message': f'Lỗi khi cào dữ liệu: {str(e)}',
+                    'error_details': error_details
+                })
+
+        
+        # Start crawler trong thread riêng
+        import threading
+        crawler_thread = threading.Thread(target=run_crawler)
+        crawler_thread.daemon = True
+        crawler_thread.start()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Đã bắt đầu cào dữ liệu từ {len(valid_urls)} category URLs',
+            'category_count': len(valid_urls)
+        })
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Lỗi API crawl omron: {str(e)}")
+        logger.error(error_details)
+        
+        return jsonify({
+            'success': False,
+            'message': f'Lỗi API: {str(e)}',
+            'error_details': error_details
+        }), 500
+
+
+@main_bp.route('/download-omron-result/<path:folder_name>')
+def download_omron_result(folder_name):
+    """Tải xuống kết quả Omron crawler dưới dạng ZIP"""
+    try:
+        # Đường dẫn thư mục output omron
+        omron_output_dir = os.path.join(os.getcwd(), "output_omron")
+        folder_path = os.path.join(omron_output_dir, folder_name)
+        
+        # Kiểm tra thư mục tồn tại
+        if not os.path.exists(folder_path):
+            flash('Thư mục kết quả không tồn tại hoặc đã bị xóa', 'error')
+            return redirect(url_for('main.omron_crawler'))
+        
+        # Tạo file ZIP
+        zip_filename = f"{folder_name}.zip"
+        zip_path = os.path.join(omron_output_dir, zip_filename)
+        
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(folder_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, folder_path)
+                    zipf.write(file_path, arcname)
+        
+        return send_file(zip_path, as_attachment=True, download_name=zip_filename)
+        
+    except Exception as e:
+        print(f"Lỗi khi tạo ZIP: {str(e)}")
+        flash(f'Lỗi khi tạo file ZIP: {str(e)}', 'error')
+        return redirect(url_for('main.omron_crawler'))
+
+@main_bp.route('/list-omron-results')
+def list_omron_results():
+    """API để lấy danh sách kết quả Omron crawler"""
+    try:
+        omron_output_dir = os.path.join(os.getcwd(), "output_omron")
+        
+        if not os.path.exists(omron_output_dir):
+            return jsonify({
+                'success': True,
+                'results': []
+            })
+        
+        results = []
+        for item in os.listdir(omron_output_dir):
+            item_path = os.path.join(omron_output_dir, item)
+            if os.path.isdir(item_path):
+                # Đếm số categories và sản phẩm
+                category_count = 0
+                total_products = 0
+                total_images = 0
+                
+                for category_dir in os.listdir(item_path):
+                    category_path = os.path.join(item_path, category_dir)
+                    if os.path.isdir(category_path):
+                        category_count += 1
+                        
+                        # Đếm file Excel
+                        excel_files = [f for f in os.listdir(category_path) if f.endswith('.xlsx')]
+                        if excel_files:
+                            # Đọc Excel để đếm sản phẩm
+                            try:
+                                excel_path = os.path.join(category_path, excel_files[0])
+                                df = pd.read_excel(excel_path)
+                                total_products += len(df)
+                            except:
+                                pass
+                        
+                        # Đếm ảnh
+                        images_dir = os.path.join(category_path, "images")
+                        if os.path.exists(images_dir):
+                            images = [f for f in os.listdir(images_dir) if f.endswith('.webp')]
+                            total_images += len(images)
+                
+                # Lấy thông tin thời gian
+                stat = os.stat(item_path)
+                created_time = datetime.fromtimestamp(stat.st_ctime).strftime("%d/%m/%Y %H:%M")
+                
+                results.append({
+                    'folder_name': item,
+                    'created_time': created_time,
+                    'category_count': category_count,
+                    'product_count': total_products,
+                    'image_count': total_images
+                })
+        
+        # Sắp xếp theo thời gian tạo (mới nhất trước)
+        results.sort(key=lambda x: x['created_time'], reverse=True)
+        
+        return jsonify({
+            'success': True,
+            'results': results
+        })
+        
+    except Exception as e:
+        print(f"Lỗi khi lấy danh sách kết quả Omron: {str(e)}")
         return jsonify({
             'success': False,
             'message': f'Lỗi: {str(e)}'
