@@ -21,7 +21,10 @@ import json
 import logging
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from app.webp_converter import WebPConverter
+try:
+    from app.webp_converter import WebPConverter
+except ImportError:
+    from webp_converter import WebPConverter
 import threading
 
 # Selenium imports for dynamic content
@@ -316,6 +319,177 @@ class AutonicsCrawler:
         except Exception as e:
             logger.error(f"Lỗi khi check pagination: {str(e)}")
             return False
+    
+    def detect_url_type(self, url):
+        """
+        Phát hiện loại URL: category, series, hoặc model
+        
+        Args:
+            url: URL cần phân tích
+            
+        Returns:
+            str: 'category', 'series', 'model', hoặc 'unknown'
+        """
+        try:
+            if '/vn/product/category/' in url:
+                return 'category'
+            elif '/vn/series/' in url:
+                return 'series'
+            elif '/vn/model/' in url:
+                return 'model'
+            else:
+                return 'unknown'
+        except Exception as e:
+            logger.error(f"Lỗi khi detect URL type cho {url}: {str(e)}")
+            return 'unknown'
+    
+    def extract_model_code_from_url(self, url):
+        """
+        Trích xuất model code từ model URL
+        
+        Args:
+            url: Model URL (ví dụ: https://www.autonics.com/vn/model/BYS500-TDT1,2)
+            
+        Returns:
+            str: Model code (ví dụ: BYS500-TDT1,2)
+        """
+        try:
+            # Extract từ URL pattern: /vn/model/{model_code}
+            parts = url.split('/vn/model/')
+            if len(parts) > 1:
+                model_code = parts[1].strip()
+                # Remove any query parameters
+                if '?' in model_code:
+                    model_code = model_code.split('?')[0]
+                return model_code
+            return ''
+        except Exception as e:
+            logger.error(f"Lỗi khi extract model code từ URL {url}: {str(e)}")
+            return ''
+    
+    def crawl_single_model(self, model_url):
+        """
+        Cào dữ liệu từ một model URL cụ thể
+        
+        Args:
+            model_url: URL của model cụ thể
+            
+        Returns:
+            tuple: (products_data, category_name)
+        """
+        logger.info(f"Bắt đầu cào single model: {model_url}")
+        
+        # Extract model code từ URL
+        model_code = self.extract_model_code_from_url(model_url)
+        if not model_code:
+            logger.error(f"Không thể extract model code từ URL: {model_url}")
+            return [], "Unknown_Model"
+        
+        self.emit_progress(10, f"Đang cào model: {model_code}")
+        
+        try:
+            # Lấy thông tin chi tiết sản phẩm
+            self.emit_progress(50, f"Đang lấy thông tin chi tiết model {model_code}...")
+            product_details = self.extract_product_details(model_url)
+            
+            if not product_details:
+                logger.warning(f"Không thể lấy thông tin chi tiết cho model: {model_url}")
+                return [], model_code
+            
+            # Update stats
+            self.stats["products_found"] += 1
+            self.stats["products_processed"] += 1
+            
+            self.emit_progress(90, f"Đã hoàn thành cào model {model_code}")
+            
+            # Tạo category name từ model code hoặc category info
+            category_name = product_details.get('category', model_code)
+            if not category_name:
+                category_name = f"Model_{sanitize_folder_name(model_code)}"
+            else:
+                category_name = sanitize_folder_name(category_name)
+            
+            logger.info(f"Đã cào thành công model {model_code} thuộc category {category_name}")
+            
+            return [product_details], category_name
+            
+        except Exception as e:
+            logger.error(f"Lỗi khi cào single model {model_url}: {str(e)}")
+            return [], model_code
+    
+    def crawl_multiple_models(self, model_urls):
+        """
+        Cào dữ liệu từ nhiều model URLs và gộp vào 1 folder/Excel chung
+        
+        Args:
+            model_urls: List các model URLs
+            
+        Returns:
+            tuple: (all_products_data, folder_name)
+        """
+        logger.info(f"Bắt đầu cào {len(model_urls)} models và gộp vào 1 folder chung")
+        
+        all_products_data = []
+        successful_models = []
+        failed_models = []
+        
+        for i, model_url in enumerate(model_urls):
+            try:
+                progress = (i / len(model_urls)) * 80  # Reserve 20% for final processing
+                self.emit_progress(progress, f"Đang cào model {i+1}/{len(model_urls)}")
+                
+                # Extract model code
+                model_code = self.extract_model_code_from_url(model_url)
+                if not model_code:
+                    logger.warning(f"Không thể extract model code từ URL: {model_url}")
+                    failed_models.append(model_url)
+                    continue
+                
+                # Lấy thông tin chi tiết sản phẩm
+                product_details = self.extract_product_details(model_url)
+                
+                if product_details:
+                    all_products_data.append(product_details)
+                    successful_models.append(model_code)
+                    
+                    # Update stats
+                    self.stats["products_found"] += 1
+                    self.stats["products_processed"] += 1
+                    
+                    logger.info(f"✅ Đã cào thành công model: {model_code}")
+                else:
+                    logger.warning(f"❌ Không thể lấy thông tin chi tiết cho model: {model_url}")
+                    failed_models.append(model_url)
+                
+            except Exception as e:
+                logger.error(f"Lỗi khi cào model {model_url}: {str(e)}")
+                failed_models.append(model_url)
+        
+        # Tạo folder name dựa trên số lượng models thành công
+        if successful_models:
+            if len(successful_models) == 1:
+                folder_name = f"Single_Model_{successful_models[0]}"
+            else:
+                folder_name = f"Multiple_Models_{len(successful_models)}_Products"
+            
+            folder_name = sanitize_folder_name(folder_name)
+        else:
+            folder_name = "Failed_Models"
+        
+        # Log kết quả
+        logger.info(f"=== KẾT QUẢ CRAWL MULTIPLE MODELS ===")
+        logger.info(f"Tổng models: {len(model_urls)}")
+        logger.info(f"Thành công: {len(successful_models)}")
+        logger.info(f"Thất bại: {len(failed_models)}")
+        logger.info(f"Folder name: {folder_name}")
+        
+        if successful_models:
+            logger.info(f"Models thành công: {', '.join(successful_models[:10])}{'...' if len(successful_models) > 10 else ''}")
+        
+        if failed_models:
+            logger.warning(f"Models thất bại: {failed_models}")
+        
+        return all_products_data, folder_name
     
     def extract_products_from_series(self, series_url):
         """
@@ -1154,12 +1328,12 @@ class AutonicsCrawler:
         
         return detailed_products, category_name
     
-    def crawl_products(self, category_urls):
+    def crawl_products(self, urls):
         """
-        Cào dữ liệu từ danh sách category URLs
+        Cào dữ liệu từ danh sách URLs (có thể là category URLs hoặc model URLs)
         
         Args:
-            category_urls: Danh sách URL categories
+            urls: Danh sách URL (categories hoặc models)
             
         Returns:
             str: Đường dẫn thư mục kết quả
@@ -1171,57 +1345,123 @@ class AutonicsCrawler:
         result_dir = os.path.join(self.output_root, f"AutonicsProduct_{timestamp}")
         os.makedirs(result_dir, exist_ok=True)
         
-        self.emit_progress(0, f"Bắt đầu cào dữ liệu từ {len(category_urls)} categories")
+        # Phân loại URLs theo loại
+        categorized_urls = {
+            'category': [],
+            'model': [],
+            'series': [],
+            'unknown': []
+        }
         
-        for i, category_url in enumerate(category_urls):
+        for url in urls:
+            url_type = self.detect_url_type(url)
+            categorized_urls[url_type].append(url)
+        
+        # Log thống kê URLs
+        total_urls = len(urls)
+        logger.info(f"=== PHÂN LOẠI URLs ===")
+        logger.info(f"Tổng cộng: {total_urls} URLs")
+        logger.info(f"Category URLs: {len(categorized_urls['category'])}")
+        logger.info(f"Model URLs: {len(categorized_urls['model'])}")
+        logger.info(f"Series URLs: {len(categorized_urls['series'])}")
+        logger.info(f"Unknown URLs: {len(categorized_urls['unknown'])}")
+        
+        if categorized_urls['unknown']:
+            logger.warning(f"Unknown URLs: {categorized_urls['unknown']}")
+        
+        self.emit_progress(0, f"Bắt đầu cào dữ liệu từ {total_urls} URLs")
+        
+        processed_count = 0
+        
+        # Xử lý Category URLs
+        for i, category_url in enumerate(categorized_urls['category']):
             try:
+                progress = (processed_count / total_urls) * 100
+                self.emit_progress(progress, f"Đang xử lý category {i+1}/{len(categorized_urls['category'])}")
+                
                 # Cào dữ liệu category
                 products_data, category_name = self.crawl_category(category_url)
                 
-                if not products_data:
-                    continue
+                if products_data:
+                    self._save_products_data(products_data, category_name, result_dir)
+                    self.stats["categories_processed"] += 1
                 
-                # Tạo thư mục cho category
-                category_dir = os.path.join(result_dir, category_name)
-                images_dir = os.path.join(category_dir, "images")
-                os.makedirs(category_dir, exist_ok=True)
-                os.makedirs(images_dir, exist_ok=True)
-                
-                # Tải ảnh với đa luồng
-                self.emit_progress(90, f"Đang tải ảnh cho category {category_name}...")
-                
-                def download_image(product):
-                    if product.get('image_url') and product.get('product_code'):
-                        return self.download_and_process_image(
-                            product['image_url'],
-                            images_dir,
-                            product['product_code']
-                        )
-                    return False
-                
-                with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                    image_futures = [executor.submit(download_image, product) for product in products_data]
-                    concurrent.futures.wait(image_futures)
-                
-                # Tạo file Excel
-                excel_path = os.path.join(category_dir, f"{category_name}.xlsx")
-                self.create_excel_with_specifications(products_data, excel_path)
-                
-                self.stats["categories_processed"] += 1
+                processed_count += 1
                 
             except Exception as e:
                 logger.error(f"Lỗi khi xử lý category {category_url}: {str(e)}")
+                processed_count += 1
+        
+        # Xử lý Model URLs
+        model_urls = categorized_urls['model']
+        
+        if len(model_urls) >= 2:
+            # Xử lý nhiều model URLs - gộp vào 1 folder chung
+            try:
+                progress = (processed_count / total_urls) * 100
+                self.emit_progress(progress, f"Đang xử lý {len(model_urls)} models (gộp chung)")
+                
+                # Cào tất cả models và gộp vào 1 folder
+                all_products_data, folder_name = self.crawl_multiple_models(model_urls)
+                
+                if all_products_data:
+                    self._save_products_data(all_products_data, folder_name, result_dir)
+                    self.stats["categories_processed"] += 1  # Treat as 1 category for stats
+                    logger.info(f"✅ Đã gộp {len(all_products_data)} models vào folder: {folder_name}")
+                
+                # Update processed count for all model URLs
+                processed_count += len(model_urls)
+                
+            except Exception as e:
+                logger.error(f"Lỗi khi xử lý multiple models: {str(e)}")
+                processed_count += len(model_urls)
+        
+        else:
+            # Xử lý từng model URL riêng lẻ (logic cũ cho single model)
+            for i, model_url in enumerate(model_urls):
+                try:
+                    progress = (processed_count / total_urls) * 100
+                    self.emit_progress(progress, f"Đang xử lý model {i+1}/{len(model_urls)}")
+                    
+                    # Cào dữ liệu single model
+                    products_data, category_name = self.crawl_single_model(model_url)
+                    
+                    if products_data:
+                        self._save_products_data(products_data, category_name, result_dir)
+                        self.stats["categories_processed"] += 1  # Treat as a category for stats
+                    
+                    processed_count += 1
+                    
+                except Exception as e:
+                    logger.error(f"Lỗi khi xử lý model {model_url}: {str(e)}")
+                    processed_count += 1
+        
+        # Xử lý Series URLs (có thể thêm logic sau)
+        for i, series_url in enumerate(categorized_urls['series']):
+            try:
+                progress = (processed_count / total_urls) * 100
+                self.emit_progress(progress, f"Đang xử lý series {i+1}/{len(categorized_urls['series'])}")
+                
+                logger.info(f"Series URL được detect: {series_url}")
+                logger.info("Chưa implement xử lý series URL, bỏ qua...")
+                
+                processed_count += 1
+                
+            except Exception as e:
+                logger.error(f"Lỗi khi xử lý series {series_url}: {str(e)}")
+                processed_count += 1
         
         # Hoàn thành
         end_time = time.time()
         duration = end_time - start_time
         
-        self.emit_progress(100, f"Hoàn thành! Đã xử lý {self.stats['categories_processed']} categories")
+        self.emit_progress(100, f"Hoàn thành! Đã xử lý {processed_count}/{total_urls} URLs")
         
         # Log thống kê cuối cùng
         logger.info("=== THỐNG KÊ CRAWLER AUTONICS ===")
         logger.info(f"Thời gian thực hiện: {duration:.2f} giây")
-        logger.info(f"Categories đã xử lý: {self.stats['categories_processed']}")
+        logger.info(f"Tổng URLs được xử lý: {processed_count}/{total_urls}")
+        logger.info(f"Categories/Models đã xử lý: {self.stats['categories_processed']}")
         logger.info(f"Series tìm thấy: {self.stats['series_found']}")
         logger.info(f"Sản phẩm tìm thấy: {self.stats['products_found']}")
         logger.info(f"Sản phẩm đã xử lý: {self.stats['products_processed']}")
@@ -1230,10 +1470,68 @@ class AutonicsCrawler:
         logger.info(f"Ảnh thất bại: {self.stats['failed_images']}")
         
         return result_dir
+    
+    def _save_products_data(self, products_data, category_name, result_dir):
+        """
+        Lưu dữ liệu sản phẩm vào thư mục kết quả
+        
+        Args:
+            products_data: Danh sách dữ liệu sản phẩm
+            category_name: Tên category/folder
+            result_dir: Thư mục kết quả gốc
+        """
+        try:
+            # Tạo thư mục cho category/model
+            category_dir = os.path.join(result_dir, category_name)
+            images_dir = os.path.join(category_dir, "images")
+            os.makedirs(category_dir, exist_ok=True)
+            os.makedirs(images_dir, exist_ok=True)
+            
+            # Tải ảnh với đa luồng
+            logger.info(f"Đang tải ảnh cho {category_name}...")
+            
+            def download_image(product):
+                if product.get('image_url') and product.get('product_code'):
+                    return self.download_and_process_image(
+                        product['image_url'],
+                        images_dir,
+                        product['product_code']
+                    )
+                return False
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                image_futures = [executor.submit(download_image, product) for product in products_data]
+                concurrent.futures.wait(image_futures)
+            
+            # Tạo file Excel
+            excel_path = os.path.join(category_dir, f"{category_name}.xlsx")
+            self.create_excel_with_specifications(products_data, excel_path)
+            
+            logger.info(f"Đã lưu {len(products_data)} sản phẩm vào {category_dir}")
+            
+        except Exception as e:
+            logger.error(f"Lỗi khi lưu dữ liệu cho {category_name}: {str(e)}")
 
 if __name__ == "__main__":
-    # Test crawler
+    # Test crawler với category và multiple model URLs
     crawler = AutonicsCrawler()
-    test_urls = ["https://www.autonics.com/vn/product/category/Photoelectric"]
+    
+    # Test URLs bao gồm category và multiple models
+    test_urls = [
+        "https://www.autonics.com/vn/product/category/Photoelectric",  # Category URL
+        "https://www.autonics.com/vn/model/BYS500-TDT1,2",             # Model URL 1
+        "https://www.autonics.com/vn/model/BYS500-TDT3,4"              # Model URL 2 (example)
+    ]
+    
+    print("=== TEST AUTONICS CRAWLER WITH MULTIPLE MODELS ===")
+    print(f"Testing với {len(test_urls)} URLs:")
+    for i, url in enumerate(test_urls, 1):
+        print(f"{i}. {url}")
+    
+    print("\n📋 Expected behavior:")
+    print("- Category URL: Tạo folder riêng")
+    print("- Multiple Model URLs: Gộp vào 1 folder chung với 1 file Excel")
+    
     result_dir = crawler.crawl_products(test_urls)
-    print(f"Kết quả được lưu tại: {result_dir}")
+    print(f"\n✅ Kết quả được lưu tại: {result_dir}")
+    print("\n=== HOÀN THÀNH TEST ===")
