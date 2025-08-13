@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keyence Crawler - Haiphongtech.vn</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #dc2626 0%, #f97316 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header-section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        .header-section h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .header-section .subtitle {
+            color: #7f8c8d;
+            font-size: 1.1em;
+            margin-bottom: 20px;
+        }
+
+        .website-info {
+            background: linear-gradient(45deg, #dc2626, #f97316);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            display: inline-block;
+        }
+
+        .control-panel {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .url-input-section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .results-section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .progress-section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            display: none;
+        }
+
+        .btn-custom {
+            background: linear-gradient(45deg, #dc2626, #f97316);
+            border: none;
+            color: white;
+            border-radius: 10px;
+            padding: 12px 30px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn-custom:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(249, 115, 22, 0.3);
+            color: white;
+        }
+
+        .btn-secondary-custom {
+            background: linear-gradient(45deg, #95a5a6, #7f8c8d);
+            border: none;
+            color: white;
+            border-radius: 10px;
+            padding: 8px 20px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn-secondary-custom:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 5px 15px rgba(149, 165, 166, 0.3);
+            color: white;
+        }
+
+        .progress {
+            height: 25px;
+            border-radius: 15px;
+            background-color: #f8f9fa;
+        }
+
+        .progress-bar {
+            border-radius: 15px;
+            background: linear-gradient(45deg, #dc2626, #f97316);
+            transition: width 0.3s ease;
+        }
+
+        .result-item {
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .result-item:hover {
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .category-url-item {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 10px 15px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: between;
+            align-items: center;
+        }
+
+        .spinner-border-sm {
+            width: 1rem;
+            height: 1rem;
+        }
+
+        .alert-custom {
+            border-radius: 10px;
+            border: none;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .feature-list {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .feature-list ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .feature-list li {
+            margin-bottom: 8px;
+        }
+
+        .example-urls {
+            background: #fef3c7;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+
+        .example-urls code {
+            background: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .logs-container {
+            background: #2c3e50;
+            color: #ecf0f1;
+            border-radius: 10px;
+            padding: 20px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin-top: 20px;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            word-wrap: break-word;
+        }
+
+        .log-timestamp {
+            color: #95a5a6;
+        }
+
+        .log-message {
+            color: #ecf0f1;
+        }
+
+        .log-detail {
+            color: #f39c12;
+        }
+
+        .keyence-badge {
+            background: linear-gradient(45deg, #dc2626, #f97316);
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="main-container">
+        <!-- Header Section -->
+        <div class="header-section">
+            <h1><i class="fas fa-industry"></i> Keyence Product Crawler</h1>
+            <p class="subtitle">Cào dữ liệu sản phẩm từ website Keyence Việt Nam với xử lý đa luồng và white background
+                processing</p>
+            <div class="website-info">
+                <i class="fas fa-globe"></i> <strong>Target:</strong> keyence.com.vn
+                <span class="ms-3"><i class="fas fa-language"></i> Vietnamese interface</span>
+                <span class="ms-3 keyence-badge">NO AI REQUIRED</span>
+            </div>
+        </div>
+
+        <!-- Control Panel -->
+        <div class="control-panel">
+            <h3><i class="fas fa-cogs"></i> Bảng Điều Khiển</h3>
+            <div class="row">
+                <div class="col-md-6">
+                    <button id="btnHome" class="btn btn-secondary-custom me-2">
+                        <i class="fas fa-home"></i> Trang Chủ
+                    </button>
+                    <button id="btnListResults" class="btn btn-secondary-custom">
+                        <i class="fas fa-list"></i> Xem Kết Quả
+                    </button>
+                </div>
+                <div class="col-md-6 text-end">
+                    <button id="btnClearLogs" class="btn btn-secondary-custom">
+                        <i class="fas fa-trash"></i> Xóa Logs
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- URL Input Section -->
+        <div class="url-input-section">
+            <h3><i class="fas fa-link"></i> Danh Sách Category URLs</h3>
+            <p class="text-muted">Nhập các URL category từ Keyence Việt Nam để bắt đầu cào dữ liệu</p>
+
+            <div class="example-urls">
+                <strong><i class="fas fa-lightbulb"></i> Ví dụ URLs:</strong>
+                <code>https://www.keyence.com.vn/products/sensor/photoelectric/</code>
+                <code>https://www.keyence.com.vn/products/sensor/proximity/</code>
+                <code>https://www.keyence.com.vn/products/sensor/measurement/</code>
+            </div>
+
+            <div class="mt-3">
+                <label for="categoryUrls" class="form-label"><strong>Category URLs (một URL mỗi dòng):</strong></label>
+                <textarea class="form-control" id="categoryUrls" rows="8" placeholder="Nhập các URL category, mỗi URL một dòng...
+Ví dụ:
+https://www.keyence.com.vn/products/sensor/photoelectric/
+https://www.keyence.com.vn/products/sensor/proximity/"></textarea>
+            </div>
+
+            <div class="mt-3">
+                <button id="btnStartCrawl" class="btn btn-custom">
+                    <i class="fas fa-play"></i> Bắt Đầu Cào Dữ Liệu
+                </button>
+                <button id="btnStopCrawl" class="btn btn-danger" style="display: none;">
+                    <i class="fas fa-stop"></i> Dừng Lại
+                </button>
+            </div>
+
+            <div class="feature-list">
+                <h5><i class="fas fa-star"></i> Tính Năng Crawler Keyence:</h5>
+                <ul>
+                    <li><strong>Cào đa luồng:</strong> Xử lý nhiều series và sản phẩm song song</li>
+                    <li><strong>Selenium automation:</strong> Click switches để hiển thị discontinued products</li>
+                    <li><strong>No AI dependency:</strong> Preserve original Vietnamese text từ website</li>
+                    <li><strong>White background processing:</strong> Thêm nền trắng cho ảnh WordPress-ready</li>
+                    <li><strong>WebP conversion:</strong> Chuyển đổi ảnh sang định dạng WebP (~90% compression)</li>
+                    <li><strong>Complex specs parsing:</strong> 32+ technical specifications per product</li>
+                    <li><strong>HTML table format:</strong> Match Keyence website structure exactly</li>
+                    <li><strong>Folder structure:</strong> Tự động tạo folder theo category + images subfolder</li>
+                    <li><strong>Progress tracking:</strong> Real-time progress với SocketIO</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Progress Section -->
+        <div class="progress-section" id="progressSection">
+            <h3><i class="fas fa-chart-line"></i> Tiến Trình Cào Dữ Liệu</h3>
+            <div class="progress mb-3">
+                <div class="progress-bar" role="progressbar" id="progressBar" style="width: 0%"></div>
+            </div>
+            <div id="progressMessage" class="text-center mb-2">Sẵn sàng bắt đầu...</div>
+            <div id="progressDetail" class="text-center text-muted small"></div>
+
+            <!-- Stats Display -->
+            <div class="row mt-4" id="statsSection" style="display: none;">
+                <div class="col-md-2">
+                    <div class="text-center">
+                        <div class="fs-4 fw-bold text-primary" id="statCategories">0</div>
+                        <small class="text-muted">Categories</small>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="text-center">
+                        <div class="fs-4 fw-bold text-info" id="statSeries">0</div>
+                        <small class="text-muted">Series</small>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="text-center">
+                        <div class="fs-4 fw-bold text-success" id="statProducts">0</div>
+                        <small class="text-muted">Products</small>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="text-center">
+                        <div class="fs-4 fw-bold text-warning" id="statImages">0</div>
+                        <small class="text-muted">Images</small>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="text-center">
+                        <div class="fs-4 fw-bold text-danger" id="statErrors">0</div>
+                        <small class="text-muted">Errors</small>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="text-center">
+                        <div class="fs-4 fw-bold text-secondary" id="statTime">0s</div>
+                        <small class="text-muted">Time</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logs Container -->
+            <div class="logs-container" id="logsContainer">
+                <div class="log-entry">
+                    <span class="log-timestamp">[Đang chờ...]</span>
+                    <span class="log-message">Sẵn sàng để bắt đầu cào dữ liệu Keyence</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="results-section" id="resultsSection" style="display: none;">
+            <h3><i class="fas fa-file-download"></i> Kết Quả Crawler</h3>
+            <div id="resultsContainer">
+                <!-- Results will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Global variables
+        let socket = null;
+        let startTime = null;
+        let timeInterval = null;
+        let isRunning = false;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function () {
+            initializeSocket();
+            loadResults();
+
+            // Event listeners
+            document.getElementById('btnStartCrawl').addEventListener('click', startCrawling);
+            document.getElementById('btnStopCrawl').addEventListener('click', stopCrawling);
+            document.getElementById('btnHome').addEventListener('click', () => window.location.href = '/');
+            document.getElementById('btnListResults').addEventListener('click', loadResults);
+            document.getElementById('btnClearLogs').addEventListener('click', clearLogs);
+        });
+
+        // Initialize Socket.IO
+        function initializeSocket() {
+            socket = io();
+
+            socket.on('progress_update', function (data) {
+                updateProgress(data.percent, data.message, data.detail || '');
+            });
+
+            socket.on('crawler_completed', function (data) {
+                showSuccess(data.message);
+                isRunning = false;
+                stopTimer();
+                loadResults();
+                resetUI();
+            });
+
+            socket.on('crawler_error', function (data) {
+                showError(data.message);
+                isRunning = false;
+                stopTimer();
+                resetUI();
+            });
+        }
+
+        // Start crawling
+        function startCrawling() {
+            const categoryUrls = document.getElementById('categoryUrls').value.trim();
+
+            if (!categoryUrls) {
+                showError('Vui lòng nhập ít nhất một URL category!');
+                return;
+            }
+
+            // Parse URLs
+            const urls = categoryUrls.split('\n')
+                .map(url => url.trim())
+                .filter(url => url.length > 0);
+
+            if (urls.length === 0) {
+                showError('Không có URL hợp lệ nào!');
+                return;
+            }
+
+            // Validate URLs
+            const invalidUrls = urls.filter(url => !url.includes('keyence.com.vn'));
+            if (invalidUrls.length > 0) {
+                showError(`Các URL không hợp lệ (phải chứa keyence.com.vn): ${invalidUrls.join(', ')}`);
+                return;
+            }
+
+            // Start crawling
+            isRunning = true;
+            startTimer();
+            showProgressSection();
+            updateUIForRunning();
+
+            // Send request
+            fetch('/crawl-keyence', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    category_urls: urls
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        addLog(`Bắt đầu cào dữ liệu từ ${data.category_count} categories`);
+                    } else {
+                        showError(data.message);
+                        isRunning = false;
+                        stopTimer();
+                        resetUI();
+                    }
+                })
+                .catch(error => {
+                    showError('Lỗi kết nối: ' + error.message);
+                    isRunning = false;
+                    stopTimer();
+                    resetUI();
+                });
+        }
+
+        // Stop crawling
+        function stopCrawling() {
+            if (isRunning) {
+                isRunning = false;
+                stopTimer();
+                resetUI();
+                showError('Đã dừng quá trình cào dữ liệu');
+            }
+        }
+
+        // Update progress
+        function updateProgress(percent, message, detail) {
+            const progressBar = document.getElementById('progressBar');
+            const progressMessage = document.getElementById('progressMessage');
+            const progressDetail = document.getElementById('progressDetail');
+
+            progressBar.style.width = percent + '%';
+            progressBar.textContent = Math.round(percent) + '%';
+            progressMessage.textContent = message;
+            progressDetail.textContent = detail;
+
+            addLog(message + (detail ? ' - ' + detail : ''));
+
+            // Show stats section if progress > 0
+            if (percent > 0) {
+                document.getElementById('statsSection').style.display = 'block';
+            }
+        }
+
+        // Add log entry
+        function addLog(message, type = 'info') {
+            const logsContainer = document.getElementById('logsContainer');
+            const timestamp = new Date().toLocaleTimeString();
+
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.innerHTML = `
+                <span class="log-timestamp">[${timestamp}]</span>
+                <span class="log-message">${message}</span>
+            `;
+
+            logsContainer.appendChild(logEntry);
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+        }
+
+        // Clear logs
+        function clearLogs() {
+            const logsContainer = document.getElementById('logsContainer');
+            logsContainer.innerHTML = `
+                <div class="log-entry">
+                    <span class="log-timestamp">[${new Date().toLocaleTimeString()}]</span>
+                    <span class="log-message">Đã xóa logs</span>
+                </div>
+            `;
+        }
+
+        // Show progress section
+        function showProgressSection() {
+            document.getElementById('progressSection').style.display = 'block';
+            document.getElementById('resultsSection').style.display = 'none';
+        }
+
+        // Update UI for running state
+        function updateUIForRunning() {
+            document.getElementById('btnStartCrawl').style.display = 'none';
+            document.getElementById('btnStopCrawl').style.display = 'inline-block';
+            document.getElementById('categoryUrls').disabled = true;
+        }
+
+        // Reset UI
+        function resetUI() {
+            document.getElementById('btnStartCrawl').style.display = 'inline-block';
+            document.getElementById('btnStopCrawl').style.display = 'none';
+            document.getElementById('categoryUrls').disabled = false;
+        }
+
+        // Start timer
+        function startTimer() {
+            startTime = Date.now();
+            timeInterval = setInterval(updateTimer, 1000);
+        }
+
+        // Stop timer
+        function stopTimer() {
+            if (timeInterval) {
+                clearInterval(timeInterval);
+                timeInterval = null;
+            }
+        }
+
+        // Update timer display
+        function updateTimer() {
+            if (startTime) {
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                document.getElementById('statTime').textContent = elapsed + 's';
+            }
+        }
+
+        // Load results
+        function loadResults() {
+            fetch('/list-keyence-results')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        displayResults(data.results);
+                        document.getElementById('resultsSection').style.display = 'block';
+                    } else {
+                        showError('Lỗi khi tải kết quả: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    showError('Lỗi kết nối khi tải kết quả: ' + error.message);
+                });
+        }
+
+        // Display results
+        function displayResults(results) {
+            const container = document.getElementById('resultsContainer');
+
+            if (!results || results.length === 0) {
+                container.innerHTML = `
+                    <div class="alert alert-info alert-custom">
+                        <i class="fas fa-info-circle"></i> Chưa có kết quả crawler nào. Hãy chạy crawler để có kết quả.
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `
+                <div class="alert alert-success alert-custom">
+                    <i class="fas fa-check-circle"></i> Tìm thấy ${results.length} kết quả crawler
+                </div>
+            `;
+
+            results.forEach(result => {
+                html += `
+                    <div class="result-item">
+                        <div class="row align-items-center">
+                            <div class="col-md-8">
+                                <h5><i class="fas fa-folder"></i> ${result.folder_name}</h5>
+                                <div class="row">
+                                    <div class="col-md-3">
+                                        <small class="text-muted">📁 Categories: <strong>${result.category_count}</strong></small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted">📦 Products: <strong>${result.product_count}</strong></small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted">🖼️ Images: <strong>${result.image_count}</strong></small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <small class="text-muted">📅 Created: <strong>${result.created_time}</strong></small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4 text-end">
+                                <a href="/download-keyence-result/${result.folder_name}" class="btn btn-custom">
+                                    <i class="fas fa-download"></i> Tải Xuống ZIP
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // Show success message
+        function showSuccess(message) {
+            addLog('✅ ' + message, 'success');
+        }
+
+        // Show error message
+        function showError(message) {
+            addLog('❌ ' + message, 'error');
+        }
+    </script>
+</body>
+
+</html>

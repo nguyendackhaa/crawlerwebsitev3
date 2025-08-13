@@ -34,6 +34,7 @@ from app.resize import ImageResizer
 from app.webp_converter import WebPConverter
 from app.crawlerAutonics import AutonicsCrawler
 from app.crawlerOmron import OmronCrawler
+from app.crawlerKeyence import KeyenceCrawler
 
 # from app.misumicrawler import MisumiCrawler  # File đã bị xóa
 
@@ -3675,6 +3676,189 @@ def list_omron_results():
         }), 500
 
 
+# ====== KEYENCE CRAWLER ROUTES ======
+
+@main_bp.route('/keyence')
+def keyence_crawler():
+    """Trang Keyence Crawler"""
+    return render_template('keyence_crawler.html')
+
+@main_bp.route('/crawl-keyence', methods=['POST'])
+def crawl_keyence():
+    """API endpoint để cào dữ liệu Keyence"""
+    try:
+        # Lấy dữ liệu từ request
+        data = request.get_json()
+        
+        if not data or 'category_urls' not in data:
+            return jsonify({
+                'success': False,
+                'message': 'Thiếu danh sách URL categories'
+            }), 400
+        
+        category_urls = data['category_urls']
+        
+        # Validate URLs
+        if not isinstance(category_urls, list) or not category_urls:
+            return jsonify({
+                'success': False,
+                'message': 'Danh sách URL categories không hợp lệ'
+            }), 400
+        
+        # Validate URLs format
+        valid_urls = []
+        for url in category_urls:
+            url = url.strip()
+            if url and ('keyence.com.vn' in url):
+                valid_urls.append(url)
+        
+        if not valid_urls:
+            return jsonify({
+                'success': False,
+                'message': 'Không có URL Keyence hợp lệ nào'
+            }), 400
+        
+        # Khởi tạo crawler với Socket.IO (không cần Gemini API cho Keyence)
+        crawler = KeyenceCrawler(socketio=socketio)
+        
+        # Chạy crawler trong background thread
+        def run_crawler():
+            try:
+                result_dir = crawler.crawl_products(valid_urls)
+                
+                # Emit kết quả cuối cùng
+                socketio.emit('crawler_completed', {
+                    'success': True,
+                    'message': 'Cào dữ liệu Keyence hoàn thành!',
+                    'result_dir': result_dir,
+                    'stats': crawler.stats
+                })
+                
+            except Exception as e:
+                print(f"Lỗi trong quá trình cào dữ liệu Keyence: {str(e)}")
+                socketio.emit('crawler_error', {
+                    'success': False,
+                    'message': f'Lỗi: {str(e)}'
+                })
+        
+        # Chạy trong thread riêng
+        import threading
+        thread = threading.Thread(target=run_crawler)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Đã bắt đầu cào dữ liệu Keyence',
+            'category_count': len(valid_urls)
+        })
+        
+    except Exception as e:
+        print(f"Lỗi trong crawl_keyence: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Lỗi: {str(e)}'
+        }), 500
+
+@main_bp.route('/download-keyence-result/<path:folder_name>')
+def download_keyence_result(folder_name):
+    """Tải xuống kết quả Keyence crawler dưới dạng ZIP"""
+    try:
+        # Đường dẫn folder kết quả Keyence
+        output_root = os.path.join(os.getcwd(), "output_keyence")
+        folder_path = os.path.join(output_root, folder_name)
+        
+        if not os.path.exists(folder_path):
+            return jsonify({
+                'success': False,
+                'message': 'Không tìm thấy folder kết quả'
+            }), 404
+        
+        # Tạo file ZIP tạm thời
+        temp_dir = tempfile.gettempdir()
+        zip_path = os.path.join(temp_dir, f"{folder_name}.zip")
+        
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(folder_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    # Tạo relative path trong ZIP
+                    arcname = os.path.relpath(file_path, folder_path)
+                    zipf.write(file_path, arcname)
+        
+        return send_file(zip_path, as_attachment=True, download_name=f"{folder_name}.zip")
+        
+    except Exception as e:
+        print(f"Lỗi khi tạo ZIP cho Keyence: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Lỗi: {str(e)}'
+        }), 500
+
+@main_bp.route('/list-keyence-results')
+def list_keyence_results():
+    """API để lấy danh sách kết quả Keyence crawler"""
+    try:
+        output_root = os.path.join(os.getcwd(), "output_keyence")
+        
+        if not os.path.exists(output_root):
+            return jsonify({
+                'success': True,
+                'results': []
+            })
+        
+        results = []
+        
+        # Duyệt qua các folder trong output_keyence
+        for item in os.listdir(output_root):
+            item_path = os.path.join(output_root, item)
+            if os.path.isdir(item_path):
+                # Đếm số category (subfolder)
+                category_count = 0
+                total_products = 0
+                total_images = 0
+                
+                for category_item in os.listdir(item_path):
+                    category_path = os.path.join(item_path, category_item)
+                    if os.path.isdir(category_path):
+                        category_count += 1
+                        
+                        # Đếm Excel files (products)
+                        excel_files = [f for f in os.listdir(category_path) if f.endswith('.xlsx')]
+                        total_products += len(excel_files)
+                        
+                        # Đếm images
+                        images_dir = os.path.join(category_path, 'images')
+                        if os.path.exists(images_dir):
+                            image_files = [f for f in os.listdir(images_dir) if f.endswith('.webp')]
+                            total_images += len(image_files)
+                
+                # Lấy thông tin thời gian
+                stat = os.stat(item_path)
+                created_time = datetime.fromtimestamp(stat.st_ctime).strftime("%d/%m/%Y %H:%M")
+                
+                results.append({
+                    'folder_name': item,
+                    'created_time': created_time,
+                    'category_count': category_count,
+                    'product_count': total_products,
+                    'image_count': total_images
+                })
+        
+        # Sắp xếp theo thời gian tạo (mới nhất trước)
+        results.sort(key=lambda x: x['created_time'], reverse=True)
+        
+        return jsonify({
+            'success': True,
+            'results': results
+        })
+        
+    except Exception as e:
+        print(f"Lỗi khi lấy danh sách kết quả Keyence: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Lỗi: {str(e)}'
+        }), 500
 
 
 

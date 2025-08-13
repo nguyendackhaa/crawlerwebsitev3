@@ -648,7 +648,6 @@ Trả về chỉ bản dịch tiếng Việt, không thêm giải thích:"""
                         ".product-item a",
                         ".product-link"
                     ]
-                    
                     for selector in selectors:
                         try:
                             links = driver.find_elements(By.CSS_SELECTOR, selector)
@@ -659,7 +658,7 @@ Trả về chỉ bản dịch tiếng Việt, không thêm giải thích:"""
                         except Exception as e:
                             logger.debug(f"Lỗi với selector {selector}: {str(e)}")
                             continue
-                
+                    
                 for link_element in product_links:
                     try:
                         href = link_element.get_attribute('href')
@@ -790,38 +789,38 @@ Trả về chỉ bản dịch tiếng Việt, không thêm giải thích:"""
             else:
                 # Fallback: tìm tất cả links trong page
                 logger.info("⚠️ Không tìm thấy table.details, fallback tìm tất cả links")
-                potential_links = soup.find_all('a', href=True)
+            potential_links = soup.find_all('a', href=True)
+            
+            for link in potential_links:
+                try:
+                    href = link.get('href')
+                    text = link.get_text(strip=True)
+                    
+                    if href and text:
+                        # Filter links sản phẩm với tiêu chí mới
+                        if (len(text) > 2
+                            and len(href) > 3
+                            and not text.lower() in ['products', 'home', 'back', 'next', 'specifications', 'ordering info']):
+                            
+                            # Convert thành absolute URL
+                            if href.startswith('/'):
+                                full_url = urljoin(self.base_url, href)
+                            elif href.startswith('http'):
+                                full_url = href
+                            else:
+                                full_url = urljoin(series_url + '/', href.lower())
+                            
+                            # Kiểm tra không trùng lặp
+                            if not any(p['url'] == full_url for p in products_data):
+                                products_data.append({
+                                    'name': text,
+                                    'url': full_url
+                                })
+                                logger.debug(f"General fallback tìm thấy: {text} - {full_url}")
                 
-                for link in potential_links:
-                    try:
-                        href = link.get('href')
-                        text = link.get_text(strip=True)
-                        
-                        if href and text:
-                            # Filter links sản phẩm với tiêu chí mới
-                            if (len(text) > 2
-                                and len(href) > 3
-                                and not text.lower() in ['products', 'home', 'back', 'next', 'specifications', 'ordering info']):
-                                
-                                # Convert thành absolute URL
-                                if href.startswith('/'):
-                                    full_url = urljoin(self.base_url, href)
-                                elif href.startswith('http'):
-                                    full_url = href
-                                else:
-                                    full_url = urljoin(series_url + '/', href.lower())
-                                
-                                # Kiểm tra không trùng lặp
-                                if not any(p['url'] == full_url for p in products_data):
-                                    products_data.append({
-                                        'name': text,
-                                        'url': full_url
-                                    })
-                                    logger.debug(f"General fallback tìm thấy: {text} - {full_url}")
-                        
-                    except Exception as e:
-                        logger.debug(f"Lỗi khi xử lý link fallback: {str(e)}")
-                        continue
+                except Exception as e:
+                    logger.debug(f"Lỗi khi xử lý link fallback: {str(e)}")
+                    continue
             
             logger.info(f"Fallback method tìm thấy {len(products_data)} sản phẩm")
             return products_data
