@@ -203,6 +203,12 @@
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="baa-qlight-tab" data-bs-toggle="tab" data-bs-target="#baa-qlight"
+                        type="button" role="tab" aria-controls="baa-qlight" aria-selected="false">
+                        <i class="bi bi-lightbulb"></i> Cào dữ liệu BAA Qlight
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
                     <button class="nav-link" id="categorize-products-tab" data-bs-toggle="tab"
                         data-bs-target="#categorize-products" type="button" role="tab"
                         aria-controls="categorize-products" aria-selected="false">
@@ -217,12 +223,7 @@
                         <i class="bi bi-globe"></i> Cào dữ liệu MISUMI
                     </button>
                 </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="hoplong-crawler-tab" onclick="window.open('/hoplong', '_blank')"
-                        type="button">
-                        <i class="bi bi-microchip"></i> Cào dữ liệu HoplongTech.com
-                    </button>
-                </li>
+
                 <li class="nav-item" role="presentation">
                     <button class="nav-link" id="autonics-crawler-tab" onclick="window.open('/autonics', '_blank')"
                         type="button">
@@ -239,6 +240,12 @@
                     <button class="nav-link" id="keyence-crawler-tab" onclick="window.open('/keyence', '_blank')"
                         type="button">
                         <i class="bi bi-cpu"></i> Cào dữ liệu Keyence.com.vn
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="hoplong-crawler-tab" onclick="window.open('/hoplong', '_blank')"
+                        type="button">
+                        <i class="bi bi-bag"></i> Cào dữ liệu HopLongTech.com
                     </button>
                 </li>
             </ul>
@@ -279,6 +286,100 @@
                     </div>
                 </div>
 
+                <script>
+                    document.addEventListener('DOMContentLoaded', function () {
+                        const loadBtn = document.getElementById('load-series-btn');
+                        const listContainer = document.getElementById('series-list-container');
+                        const emptyDiv = document.getElementById('series-empty');
+                        const selectAllBtn = document.getElementById('select-all-series');
+                        const deselectAllBtn = document.getElementById('deselect-all-series');
+                        const searchInput = document.getElementById('series-search');
+                        const selectedInput = document.getElementById('selected_series_input');
+                        const startBtn = document.getElementById('start-crawl-series-btn');
+
+                        let seriesData = [];
+
+                        function renderSeries(list) {
+                            listContainer.innerHTML = '';
+                            if (!list || list.length === 0) {
+                                listContainer.appendChild(emptyDiv);
+                                emptyDiv.classList.remove('d-none');
+                                startBtn.disabled = true;
+                                return;
+                            }
+                            const ul = document.createElement('ul');
+                            ul.className = 'list-unstyled row';
+                            list.forEach((s, idx) => {
+                                const li = document.createElement('li');
+                                li.className = 'col-md-6 mb-2';
+                                li.innerHTML = `
+                                    <label class="d-flex align-items-center gap-2">
+                                        <input type="checkbox" class="form-check-input series-check" data-url="${s.url}" data-name="${s.name}">
+                                        <span class="fw-semibold">${s.name}</span>
+                                        <span class="badge bg-light text-dark ms-auto">${s.product_count}</span>
+                                    </label>`;
+                                ul.appendChild(li);
+                            });
+                            listContainer.appendChild(ul);
+                            updateSelected();
+                        }
+
+                        function updateSelected() {
+                            const checks = listContainer.querySelectorAll('.series-check');
+                            const selected = [];
+                            checks.forEach(ch => {
+                                if (ch.checked) {
+                                    selected.push({ url: ch.getAttribute('data-url'), name: ch.getAttribute('data-name') });
+                                }
+                            });
+                            selectedInput.value = JSON.stringify(selected);
+                            startBtn.disabled = selected.length === 0;
+                        }
+
+                        loadBtn?.addEventListener('click', async () => {
+                            loadBtn.disabled = true;
+                            loadBtn.innerText = 'Đang tải...';
+                            try {
+                                const resp = await fetch('{{ url_for("main.list_baa_qlight_series") }}');
+                                const data = await resp.json();
+                                if (data.success) {
+                                    seriesData = data.series || [];
+                                    emptyDiv.classList.add('d-none');
+                                    renderSeries(seriesData);
+                                } else {
+                                    listContainer.innerHTML = '<div class="text-danger">Không tải được danh sách series.</div>';
+                                }
+                            } catch (e) {
+                                listContainer.innerHTML = '<div class="text-danger">Lỗi kết nối khi tải series.</div>';
+                            } finally {
+                                loadBtn.disabled = false;
+                                loadBtn.innerHTML = '<i class="bi bi-cloud-download"></i> Tải danh sách series';
+                            }
+                        });
+
+                        selectAllBtn?.addEventListener('click', () => {
+                            listContainer.querySelectorAll('.series-check').forEach(ch => ch.checked = true);
+                            updateSelected();
+                        });
+
+                        deselectAllBtn?.addEventListener('click', () => {
+                            listContainer.querySelectorAll('.series-check').forEach(ch => ch.checked = false);
+                            updateSelected();
+                        });
+
+                        listContainer.addEventListener('change', (e) => {
+                            if (e.target && e.target.classList.contains('series-check')) {
+                                updateSelected();
+                            }
+                        });
+
+                        searchInput?.addEventListener('input', () => {
+                            const q = (searchInput.value || '').toLowerCase();
+                            const filtered = seriesData.filter(s => s.name.toLowerCase().includes(q));
+                            renderSeries(filtered);
+                        });
+                    });
+                </script>
                 <!-- Tab thu thập thông tin sản phẩm -->
                 <div class="tab-pane fade" id="scrape" role="tabpanel" aria-labelledby="scrape-tab">
                     <div class="form-container">
@@ -1195,8 +1296,72 @@ Ví dụ: https://baa.vn/vn/Category/cam-bien-autonics_1795"></textarea>
                                 </form>
                             </div>
                         </div>
+
+                        <!-- Chọn series để cào (tùy chọn) -->
+                        <div class="card mt-4">
+                            <div
+                                class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">Cào theo Series được chọn (tùy chọn)</h5>
+                                <button type="button" class="btn btn-light btn-sm" id="load-series-btn">
+                                    <i class="bi bi-cloud-download"></i> Tải danh sách series
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <form id="crawl-baa-qlight-series-form"
+                                    action="{{ url_for('main.crawl_baa_qlight_series_web') }}" method="post">
+                                    <div class="row g-3">
+                                        <div class="col-md-4">
+                                            <label for="max_workers_qlight_series" class="form-label">Số luồng tối
+                                                đa:</label>
+                                            <select class="form-control" id="max_workers_qlight_series"
+                                                name="max_workers">
+                                                <option value="5">5 luồng (máy yếu)</option>
+                                                <option value="10" selected>10 luồng (mặc định)</option>
+                                                <option value="15">15 luồng (máy tốt)</option>
+                                                <option value="20">20 luồng (máy mạnh)</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-8">
+                                            <label for="output_folder_qlight_series" class="form-label">Thư mục lưu kết
+                                                quả (tùy chọn):</label>
+                                            <input type="text" class="form-control" id="output_folder_qlight_series"
+                                                name="output_folder" placeholder="output_baa_qlight_selected">
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-3">
+                                        <div class="d-flex align-items-center mb-2 gap-2">
+                                            <input type="text" class="form-control" id="series-search"
+                                                placeholder="Tìm series theo tên..." style="max-width: 320px;">
+                                            <button type="button" class="btn btn-outline-primary btn-sm"
+                                                id="select-all-series">Chọn tất cả</button>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm"
+                                                id="deselect-all-series">Bỏ chọn tất cả</button>
+                                        </div>
+                                        <div id="series-list-container" class="border rounded p-2"
+                                            style="max-height: 360px; overflow:auto; background:#fafafa;">
+                                            <div class="text-muted" id="series-empty">Nhấn "Tải danh sách series" để tải
+                                                các series từ BAA Qlight...</div>
+                                        </div>
+                                    </div>
+
+                                    <input type="hidden" name="selected_series" id="selected_series_input" value="[]">
+
+                                    <div class="mt-3">
+                                        <button type="submit" class="btn btn-secondary" id="start-crawl-series-btn"
+                                            disabled>
+                                            <i class="bi bi-list-check"></i> Bắt đầu cào theo series đã chọn
+                                        </button>
+                                        <small class="text-muted ms-2">Bạn có thể chọn 2-3 series để thử trước cho
+                                            nhanh.</small>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
                     </div>
                 </div>
+
+
 
                 <!-- Tab phân loại sản phẩm theo danh mục -->
                 <div class="tab-pane fade" id="categorize-products" role="tabpanel"

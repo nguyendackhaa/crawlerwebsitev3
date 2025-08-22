@@ -35,6 +35,13 @@ from app.webp_converter import WebPConverter
 from app.crawlerAutonics import AutonicsCrawler
 from app.crawlerOmron import OmronCrawler
 from app.crawlerKeyence import KeyenceCrawler
+from app.crawlerHopLong import HopLongCrawler
+from app.crawlerBAA_Qlight import (
+    BAAQlightCrawler,
+    crawl_baa_qlight,
+    get_all_series_list,
+    crawl_specific_series,
+)
 
 # from app.misumicrawler import MisumiCrawler  # File đã bị xóa
 
@@ -2723,6 +2730,245 @@ def crawl_baa(progress: TerminalProgressBar):
         flash(f'Lỗi: {str(e)}', 'error')
         return redirect(url_for('main.index'))
 
+@main_bp.route('/crawl-baa-qlight', methods=['POST'])
+@progress_tracker(name="Cào dữ liệu BAA Qlight", total_steps=100, verbose=True)
+def crawl_baa_qlight_web(progress: TerminalProgressBar):
+    """
+    Cào dữ liệu BAA Qlight với giao diện web
+    """
+    try:
+        progress.update(5, "Đang khởi tạo BAA Qlight Crawler")
+        
+        # Lấy thông tin từ form
+        max_workers = int(request.form.get('max_workers', 10))
+        output_folder = request.form.get('output_folder', '')
+        
+        # Giới hạn giá trị hợp lệ
+        max_workers = min(max(1, max_workers), 20)  # Từ 1-20 luồng
+        
+        progress.update(10, "Đang chuẩn bị crawler", f"Max workers: {max_workers}")
+        
+        # Tạo thư mục output nếu được chỉ định
+        if output_folder:
+            output_path = os.path.join(current_app.config['UPLOAD_FOLDER'], output_folder)
+        else:
+            output_path = os.path.join(current_app.config['UPLOAD_FOLDER'], "output_baa_qlight")
+        
+        progress.update(15, "Đang khởi tạo crawler", "Bắt đầu cào dữ liệu BAA Qlight...")
+        
+        # Tạo progress bar con cho crawler
+        crawler_progress = create_child_progress(progress, "BAA Qlight Crawler", 70)
+        
+        # Chạy crawler
+        result = crawl_baa_qlight(output_folder=output_path, max_workers=max_workers)
+        
+        if result['success']:
+            crawler_progress.complete("success", f"Cào dữ liệu hoàn tất", {
+                "Sản phẩm đã cào": result['total_products'],
+                "Series đã tìm thấy": result['total_series'],
+                "Thư mục kết quả": result['output_folder']
+            })
+            
+            progress.update(85, f"Đã cào {result['total_products']} sản phẩm từ {result['total_series']} series", "Đang nén kết quả thành ZIP")
+            
+            # Nén kết quả và trả về link download
+            zip_progress = create_child_progress(progress, "Tạo file ZIP", 10)
+            
+            # Tạo file ZIP chứa toàn bộ thư mục output
+            zip_filename = f"BAA_Qlight_Results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+            zip_path = os.path.join(current_app.config['UPLOAD_FOLDER'], zip_filename)
+            
+            try:
+                with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    for root, dirs, files in os.walk(output_path):
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            arcname = os.path.relpath(file_path, output_path)
+                            zipf.write(file_path, arcname)
+                
+                zip_progress.complete("success", "File ZIP đã tạo thành công")
+                
+                progress.update(95, "Đang tạo thông tin tải xuống")
+                
+                download_url = url_for('main.download_file', filename=zip_filename)
+                
+                # Tạo thống kê chi tiết
+                zip_size = os.path.getsize(zip_path) / (1024 * 1024)  # Kích thước MB
+                stats = {
+                    'Tổng sản phẩm': result['total_products'],
+                    'Tổng series': result['total_series'],
+                    'Thời gian xử lý': f"{result['duration']:.2f} giây",
+                    'Kích thước file': f"{zip_size:.2f} MB",
+                    'File Excel đã tạo': len(result['excel_files'])
+                }
+                
+                # Hoàn thành progress với thống kê chi tiết
+                progress.complete("success", "Cào dữ liệu BAA Qlight hoàn tất", {
+                    "Sản phẩm cào được": result['total_products'],
+                    "Series tìm thấy": result['total_series'],
+                    "Kích thước ZIP": f"{zip_size:.2f} MB",
+                    "Max workers": max_workers,
+                    "File ZIP": zip_filename,
+                    "Thời gian": f"{result['duration']:.2f}s"
+                })
+                
+                flash(f'Đã cào xong dữ liệu {result["total_products"]} sản phẩm từ {result["total_series"]} series. <a href="{download_url}" class="btn btn-primary mt-2">Tải xuống kết quả</a>', 'success')
+                
+                # Trả về trang kết quả với đường dẫn tải xuống và thống kê
+                return render_template('crawler_result.html', 
+                                      download_url=download_url,
+                                      zip_filename=zip_filename,
+                                      stats=stats,
+                                      products_count=result['total_products'],
+                                      crawler_type="BAA Qlight")
+                
+            except Exception as zip_error:
+                zip_progress.error(f"Lỗi tạo ZIP: {str(zip_error)}")
+                progress.warning(f'Đã cào xong dữ liệu nhưng không tạo được file ZIP.')
+                flash(f'Đã cào xong dữ liệu {result["total_products"]} sản phẩm từ {result["total_series"]} series nhưng không tạo được file ZIP.', 'warning')
+                return redirect(url_for('main.index'))
+        
+        else:
+            progress.error(f'Lỗi cào dữ liệu: {result.get("error", "Unknown error")}')
+            flash(f'Lỗi cào dữ liệu: {result.get("error", "Unknown error")}', 'error')
+            return redirect(url_for('main.index'))
+    
+    except Exception as e:
+        traceback.print_exc()
+        progress.error(f'Lỗi: {str(e)}', traceback.format_exc())
+        flash(f'Lỗi: {str(e)}', 'error')
+        return redirect(url_for('main.index'))
+
+
+@main_bp.route('/baa-qlight/series', methods=['GET'])
+def list_baa_qlight_series():
+    """
+    Trả về danh sách tất cả series BAA Qlight để người dùng lựa chọn trên giao diện.
+    """
+    try:
+        series = get_all_series_list()
+        return jsonify({
+            'success': True,
+            'count': len(series),
+            'series': series
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@main_bp.route('/crawl-baa-qlight-series', methods=['POST'])
+@progress_tracker(name="Cào BAA Qlight theo series đã chọn", total_steps=100, verbose=True)
+def crawl_baa_qlight_series_web(progress: TerminalProgressBar):
+    """
+    Cào dữ liệu BAA Qlight theo danh sách series người dùng chọn từ giao diện.
+    """
+    try:
+        progress.update(5, "Đang nhận danh sách series được chọn")
+        max_workers = int(request.form.get('max_workers', 10))
+        output_folder = request.form.get('output_folder', '').strip()
+
+        # Chuẩn hóa số luồng
+        max_workers = min(max(1, max_workers), 20)
+
+        # Lấy danh sách series từ hidden input (JSON)
+        import json
+        selected_series_raw = request.form.get('selected_series', '[]')
+        try:
+            selected_series = json.loads(selected_series_raw)
+        except Exception:
+            selected_series = []
+
+        # Fallback: nhận dạng theo cặp series_urls[]/series_names[] nếu có
+        if not selected_series:
+            series_urls = request.form.getlist('series_urls')
+            series_names = request.form.getlist('series_names')
+            selected_series = [
+                {'url': u, 'name': series_names[i] if i < len(series_names) else u}
+                for i, u in enumerate(series_urls)
+                if u
+            ]
+
+        if not selected_series:
+            flash('Vui lòng chọn ít nhất một series để cào!', 'error')
+            return redirect(url_for('main.index', _anchor='baa-qlight'))
+
+        # Tạo thư mục output gốc
+        base_output = os.path.join(current_app.config['UPLOAD_FOLDER'], output_folder or 'output_baa_qlight_selected')
+        os.makedirs(base_output, exist_ok=True)
+
+        progress.update(10, f"Bắt đầu cào {len(selected_series)} series", f"Max workers: {max_workers}")
+
+        total_products = 0
+        excel_files = []
+        series_results = []
+
+        # Chạy lần lượt từng series (mỗi series có progress con)
+        for idx, ser in enumerate(selected_series, start=1):
+            series_name = ser.get('name') or f'Series_{idx}'
+            series_url = ser.get('url')
+            child = create_child_progress(progress, f"Series {idx}/{len(selected_series)}: {series_name}", 80)
+            child.update(5, f"Đang xử lý {series_name}")
+
+            # Thư mục riêng cho series
+            series_output = os.path.join(base_output, re.sub(r'[<>:"/\\|?*]+', '_', series_name))
+            os.makedirs(series_output, exist_ok=True)
+
+            result = crawl_specific_series(series_url=series_url, series_name=series_name, output_folder=series_output, max_workers=max_workers)
+
+            if result.get('success'):
+                total_products += result.get('total_products', 0)
+                excel_files.extend(result.get('excel_files', []))
+                series_results.append(result)
+                child.complete('success', f"Hoàn tất {series_name}")
+            else:
+                child.error(f"Lỗi series {series_name}: {result.get('error', 'Unknown error')}")
+
+            progress.update(10 + int(70 * idx / max(1, len(selected_series))), f"Đã xử lý {idx}/{len(selected_series)} series")
+
+        # Nén kết quả
+        zip_progress = create_child_progress(progress, "Tạo file ZIP", 10)
+        zip_filename = f"BAA_Qlight_Selected_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        zip_path = os.path.join(current_app.config['UPLOAD_FOLDER'], zip_filename)
+        try:
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for root, dirs, files in os.walk(base_output):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, base_output)
+                        zipf.write(file_path, arcname)
+            zip_progress.complete('success', 'Đã tạo file ZIP kết quả')
+        except Exception as e:
+            zip_progress.error(f"Lỗi tạo ZIP: {str(e)}")
+            flash('Đã cào xong nhưng không tạo được file ZIP.', 'warning')
+            return redirect(url_for('main.index'))
+
+        download_url = url_for('main.download_file', filename=zip_filename)
+        zip_size = os.path.getsize(zip_path) / (1024 * 1024)
+
+        stats = {
+            'Số series đã chọn': len(selected_series),
+            'Tổng sản phẩm': total_products,
+            'File Excel đã tạo': len(excel_files),
+            'Kích thước file': f"{zip_size:.2f} MB",
+        }
+
+        progress.complete('success', 'Cào dữ liệu BAA Qlight theo series đã chọn hoàn tất', stats)
+
+        return render_template(
+            'crawler_result.html',
+            download_url=download_url,
+            zip_filename=zip_filename,
+            stats=stats,
+            products_count=total_products,
+            crawler_type="BAA Qlight",
+        )
+
+    except Exception as e:
+        traceback.print_exc()
+        progress.error(f'Lỗi: {str(e)}', traceback.format_exc())
+        flash(f'Lỗi: {str(e)}', 'error')
+        return redirect(url_for('main.index'))
+
 # @main_bp.route('/scrap-category-products', methods=['POST'])
 # def scrap_category_products():
 #     # DISABLED: CategoryCrawler đã bị xóa
@@ -3862,3 +4108,169 @@ def list_keyence_results():
 
 
 
+
+# ====== HOPLONG CRAWLER ROUTES ======
+
+@main_bp.route('/hoplong')
+def hoplong_crawler():
+    return render_template('hoplong_crawler.html')
+
+@main_bp.route('/hoplong/categories')
+def hoplong_categories():
+    try:
+        crawler = HopLongCrawler()
+        cats = crawler.fetch_categories_via_selenium()
+        return jsonify({'success': True, 'categories': cats})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e), 'categories': []}), 500
+
+@main_bp.route('/hoplong/subcategories')
+def hoplong_subcategories():
+    try:
+        category = request.args.get('category', '').strip()
+        if not category:
+            return jsonify({'success': False, 'message': 'Thiếu category'}), 400
+        crawler = HopLongCrawler()
+        subcategories = crawler.fetch_subcategories_for_category(category)
+        return jsonify({'success': True, 'subcategories': subcategories})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e), 'subcategories': []}), 500
+
+@main_bp.route('/hoplong/brands')
+def hoplong_brands():
+    try:
+        category = request.args.get('category', '').strip()
+        if not category:
+            return jsonify({'success': False, 'message': 'Thiếu category'}), 400
+        crawler = HopLongCrawler()
+        brands = crawler.fetch_brands_for_category(category)
+        return jsonify({'success': True, 'brands': brands})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e), 'brands': []}), 500
+
+@main_bp.route('/crawl-hoplong', methods=['POST'])
+def crawl_hoplong():
+    try:
+        data = request.get_json() or {}
+        category = data.get('category', '').strip()
+        subcategories = data.get('subcategories') or []
+        brands = data.get('brands') or []
+        max_workers = int(data.get('max_workers') or 10)
+        
+        # Hỗ trợ cả old format (chỉ category) và new format (với subcategories)
+        if not category or not brands:
+            return jsonify({'success': False, 'message': 'Thiếu category hoặc danh sách hãng'}), 400
+        
+        # Validation thêm
+        if max_workers < 1 or max_workers > 32:
+            return jsonify({'success': False, 'message': 'Số luồng phải từ 1-32'}), 400
+            
+        # Nếu có subcategories, sử dụng subcategory đầu tiên làm target
+        target_category = category
+        if subcategories:
+            target_category = subcategories[0]
+            
+        logger.info(f"Bắt đầu crawl HopLong - Category: {target_category}, Brands: {len(brands)}, Workers: {max_workers}")
+
+        crawler = HopLongCrawler(socketio_instance=socketio, max_workers=max_workers)
+
+        def run():
+            try:
+                result_dir = crawler.crawl_category_by_brands(target_category, brands)
+                socketio.emit('crawler_completed', {
+                    'success': True,
+                    'message': 'Cào dữ liệu HopLong hoàn thành!',
+                    'result_dir': result_dir,
+                    'stats': crawler.stats
+                })
+                logger.info(f"HopLong crawler hoàn thành: {result_dir}")
+                
+            except Exception as e:
+                import traceback
+                error_details = traceback.format_exc()
+                logger.error(f"Lỗi crawler HopLong: {str(e)}")
+                logger.error(error_details)
+                
+                socketio.emit('crawler_error', {
+                    'success': False,
+                    'message': f'Lỗi khi cào dữ liệu: {str(e)}',
+                    'error_details': error_details
+                })
+
+        import threading
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        return jsonify({'success': True, 'message': 'Đã bắt đầu cào dữ liệu HopLong'})
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Lỗi API crawl hoplong: {str(e)}")
+        logger.error(error_details)
+        
+        return jsonify({
+            'success': False,
+            'message': f'Lỗi API: {str(e)}',
+            'error_details': error_details
+        }), 500
+
+@main_bp.route('/list-hoplong-results')
+def list_hoplong_results():
+    try:
+        output_root = os.path.join(os.getcwd(), 'output_hoplong')
+        if not os.path.exists(output_root):
+            return jsonify({'success': True, 'results': []})
+        results = []
+        for item in os.listdir(output_root):
+            folder = os.path.join(output_root, item)
+            if not os.path.isdir(folder):
+                continue
+            category_count = 0
+            product_count = 0
+            image_count = 0
+            for sub in os.listdir(folder):
+                sub_path = os.path.join(folder, sub)
+                if os.path.isdir(sub_path):
+                    category_count += 1
+                    for f in os.listdir(sub_path):
+                        if f.lower().endswith('.xlsx'):
+                            try:
+                                df = pd.read_excel(os.path.join(sub_path, f))
+                                product_count += len(df)
+                            except Exception:
+                                pass
+                    img_dir = os.path.join(sub_path, 'images')
+                    if os.path.exists(img_dir):
+                        image_count += len([x for x in os.listdir(img_dir) if x.lower().endswith('.webp')])
+            stat = os.stat(folder)
+            created_time = datetime.fromtimestamp(stat.st_ctime).strftime('%d/%m/%Y %H:%M')
+            results.append({
+                'folder_name': item,
+                'created_time': created_time,
+                'category_count': category_count,
+                'product_count': product_count,
+                'image_count': image_count,
+            })
+        results.sort(key=lambda x: x['created_time'], reverse=True)
+        return jsonify({'success': True, 'results': results})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@main_bp.route('/download-hoplong-result/<path:folder_name>')
+def download_hoplong_result(folder_name):
+    try:
+        output_root = os.path.join(os.getcwd(), 'output_hoplong')
+        folder_path = os.path.join(output_root, folder_name)
+        if not os.path.exists(folder_path):
+            return jsonify({'success': False, 'message': 'Không tìm thấy folder'}), 404
+        temp_dir = tempfile.gettempdir()
+        zip_path = os.path.join(temp_dir, f"{folder_name}.zip")
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(folder_path):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    arc = os.path.relpath(fp, folder_path)
+                    zipf.write(fp, arc)
+        return send_file(zip_path, as_attachment=True, download_name=f"{folder_name}.zip")
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500

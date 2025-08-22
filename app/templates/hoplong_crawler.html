@@ -1,588 +1,401 @@
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HoplongTech Crawler - Haiphongtech.vn</title>
+    <title>HopLong Crawler - Haiphongtech.vn</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
-    <style>
-        body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        
-        .main-container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        
-        .header-section {
-            background: white;
-            border-radius: 15px;
-            padding: 30px;
-            margin-bottom: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        
-        .header-section h1 {
-            color: #2c3e50;
-            margin-bottom: 10px;
-            font-weight: 700;
-        }
-        
-        .header-section .subtitle {
-            color: #7f8c8d;
-            font-size: 1.1em;
-            margin-bottom: 20px;
-        }
-        
-        .website-info {
-            background: linear-gradient(45deg, #3498db, #2980b9);
-            color: white;
-            padding: 15px;
-            border-radius: 10px;
-            display: inline-block;
-        }
-        
-        .control-panel {
-            background: white;
-            border-radius: 15px;
-            padding: 30px;
-            margin-bottom: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-        }
-        
-        .categories-section {
-            background: white;
-            border-radius: 15px;
-            padding: 30px;
-            margin-bottom: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-        }
-        
-        .category-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 15px;
-            margin-top: 20px;
-        }
-        
-        .category-item {
-            border: 2px solid #e9ecef;
-            border-radius: 10px;
-            padding: 15px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            background: white;
-        }
-        
-        .category-item:hover {
-            border-color: #3498db;
-            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.2);
-            transform: translateY(-2px);
-        }
-        
-        .category-item.selected {
-            border-color: #27ae60;
-            background: linear-gradient(45deg, #27ae60, #2ecc71);
-            color: white;
-        }
-        
-        .category-name {
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
-        
-        .category-count {
-            color: #7f8c8d;
-            font-size: 0.9em;
-        }
-        
-        .category-item.selected .category-count {
-            color: rgba(255, 255, 255, 0.8);
-        }
-        
-        .progress-section {
-            background: white;
-            border-radius: 15px;
-            padding: 30px;
-            margin-bottom: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-            display: none;
-        }
-        
-        .progress-bar {
-            height: 25px;
-            border-radius: 12px;
-            background: linear-gradient(45deg, #3498db, #2980b9);
-            transition: width 0.3s ease;
-        }
-        
-        .log-section {
-            background: #2c3e50;
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 30px;
-            max-height: 400px;
-            overflow-y: auto;
-            display: none;
-        }
-        
-        .log-content {
-            color: #ecf0f1;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
-            line-height: 1.5;
-        }
-        
-        .log-entry {
-            margin-bottom: 5px;
-            padding: 5px;
-            border-radius: 5px;
-        }
-        
-        .log-entry.success {
-            background: rgba(39, 174, 96, 0.2);
-            color: #2ecc71;
-        }
-        
-        .log-entry.error {
-            background: rgba(231, 76, 60, 0.2);
-            color: #e74c3c;
-        }
-        
-        .log-entry.info {
-            background: rgba(52, 152, 219, 0.2);
-            color: #3498db;
-        }
-        
-        .btn-custom {
-            background: linear-gradient(45deg, #e74c3c, #c0392b);
-            border: none;
-            color: white;
-            padding: 12px 30px;
-            border-radius: 25px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            transition: all 0.3s ease;
-        }
-        
-        .btn-custom:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(231, 76, 60, 0.3);
-            color: white;
-        }
-        
-        .btn-success-custom {
-            background: linear-gradient(45deg, #27ae60, #2ecc71);
-        }
-        
-        .btn-success-custom:hover {
-            box-shadow: 0 10px 20px rgba(39, 174, 96, 0.3);
-        }
-        
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
-        }
-        
-        .stat-card {
-            background: linear-gradient(45deg, #9b59b6, #8e44ad);
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
-        }
-        
-        .stat-number {
-            font-size: 2.5em;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-        
-        .stat-label {
-            font-size: 0.9em;
-            opacity: 0.9;
-        }
-        
-        .loading-spinner {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255,255,255,.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: spin 1s ease-in-out infinite;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        .copyright {
-            text-align: center;
-            color: white;
-            margin-top: 30px;
-            padding: 20px;
-            background: rgba(255,255,255,0.1);
-            border-radius: 10px;
-        }
-    </style>
 </head>
-<body>
-    <div class="main-container">
-        <!-- Header Section -->
-        <div class="header-section">
-            <h1><i class="fas fa-robot"></i> HoplongTech Crawler</h1>
-            <p class="subtitle">Cào dữ liệu cảm biến và thiết bị tự động hóa từ HoplongTech.com</p>
-            <div class="website-info">
-                <i class="fas fa-globe"></i> <strong>Website:</strong> https://hoplongtech.com
-                <br>
-                <i class="fas fa-microchip"></i> <strong>Chuyên ngành:</strong> Cảm biến & Thiết bị tự động hóa
-            </div>
-        </div>
-        
-        <!-- Control Panel -->
-        <div class="control-panel">
-            <h3><i class="fas fa-cogs"></i> Cấu hình Crawling</h3>
-            <div class="row">
-                <div class="col-md-6">
-                    <label class="form-label"><i class="fas fa-hashtag"></i> Số sản phẩm tối đa mỗi danh mục (để trống = không giới hạn):</label>
-                    <input type="number" class="form-control" id="maxProductsInput" placeholder="VD: 100" min="1">
-                </div>
-                <div class="col-md-6 d-flex align-items-end">
-                    <button class="btn btn-success-custom" id="loadCategoriesBtn">
-                        <i class="fas fa-download"></i> Tải danh sách danh mục
-                    </button>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Categories Selection -->
-        <div class="categories-section" id="categoriesSection" style="display: none;">
-            <h3><i class="fas fa-list-ul"></i> Chọn danh mục cảm biến</h3>
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <span id="categoryStats" class="text-muted"></span>
+
+<body class="bg-light">
+    <div class="container py-4">
+        <div class="card mb-3">
+            <div class="card-body d-flex justify-content-between align-items-center">
                 <div>
-                    <button class="btn btn-outline-primary btn-sm" id="selectAllBtn">
-                        <i class="fas fa-check-double"></i> Chọn tất cả
-                    </button>
-                    <button class="btn btn-outline-secondary btn-sm" id="deselectAllBtn">
-                        <i class="fas fa-times"></i> Bỏ chọn tất cả
-                    </button>
+                    <h3 class="mb-1">HopLong Product Crawler</h3>
+                    <div class="text-muted">Cào dữ liệu hoplongtech.com theo danh mục và hãng</div>
                 </div>
-            </div>
-            <div class="category-grid" id="categoryGrid"></div>
-            <div class="text-center mt-4">
-                <button class="btn btn-custom btn-lg" id="startCrawlBtn" disabled>
-                    <i class="fas fa-play"></i> Bắt đầu Crawling
-                </button>
-            </div>
-        </div>
-        
-        <!-- Progress Section -->
-        <div class="progress-section" id="progressSection">
-            <h3><i class="fas fa-tasks"></i> Tiến trình Crawling</h3>
-            <div class="progress mb-3">
-                <div class="progress-bar" id="progressBar" style="width: 0%"></div>
-            </div>
-            <div class="text-center" id="progressText">Đang chuẩn bị...</div>
-            
-            <div class="stats-grid" id="statsGrid" style="display: none;">
-                <div class="stat-card">
-                    <div class="stat-number" id="totalProducts">0</div>
-                    <div class="stat-label">Tổng sản phẩm</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="successProducts">0</div>
-                    <div class="stat-label">Thành công</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="failedProducts">0</div>
-                    <div class="stat-label">Thất bại</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="totalBrands">0</div>
-                    <div class="stat-label">Thương hiệu</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="successRate">0%</div>
-                    <div class="stat-label">Tỷ lệ thành công</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="crawlDuration">0s</div>
-                    <div class="stat-label">Thời gian</div>
-                </div>
-            </div>
-            
-            <!-- Download Section -->
-            <div class="text-center mt-4" id="downloadSection" style="display: none;">
-                <div class="alert alert-success">
-                    <h5><i class="fas fa-check-circle"></i> Crawling hoàn thành!</h5>
-                    <p id="completionMessage">Đã cào dữ liệu thành công!</p>
-                    <button class="btn btn-success btn-lg" id="downloadBtn" onclick="downloadResults()">
-                        <i class="fas fa-download"></i> Tải xuống kết quả (ZIP)
-                    </button>
+                <div>
+                    <a class="btn btn-outline-secondary" href="/">Trang chủ</a>
                 </div>
             </div>
         </div>
-        
-        <!-- Log Section -->
-        <div class="log-section" id="logSection">
-            <h3><i class="fas fa-terminal"></i> Log hoạt động</h3>
-            <div class="log-content" id="logContent"></div>
+
+        <div class="card mb-3">
+            <div class="card-header">1) Chọn danh mục</div>
+            <div class="card-body">
+                <div class="row g-2 align-items-center">
+                    <div class="col-md-8">
+                        <select id="categorySelect" class="form-select">
+                            <option value="">-- Đang tải danh mục... --</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <button id="reloadCategories" class="btn btn-secondary">Tải lại danh mục</button>
+                    </div>
+                </div>
+            </div>
         </div>
-        
-        <!-- Copyright -->
-        <div class="copyright">
-            <strong>© 2025 Haiphongtech.vn</strong><br>
-            Hệ thống crawler tự động cho cảm biến và thiết bị tự động hóa
+
+        <div class="card mb-3">
+            <div class="card-header">2) Chọn danh mục con</div>
+            <div class="card-body">
+                <div class="row g-2 align-items-center">
+                    <div class="col-md-8">
+                        <div id="subcategoryContainer" class="d-flex flex-wrap gap-2"></div>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <button id="loadSubcategories" class="btn btn-success">Tải danh mục con</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header">3) Chọn hãng sản xuất</div>
+            <div class="card-body">
+                <div class="row g-2 align-items-center">
+                    <div class="col-md-8">
+                        <div id="brandContainer" class="d-flex flex-wrap gap-2"></div>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <button id="loadBrands" class="btn btn-info">Tải hãng</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header">4) Thiết lập & Bắt đầu</div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Số luồng</label>
+                        <input id="maxWorkers" type="number" class="form-control" value="10" min="1" max="32">
+                    </div>
+                    <div class="col-md-9 d-flex align-items-end justify-content-end gap-2">
+                        <button id="startBtn" class="btn btn-primary">Bắt đầu cào</button>
+                        <button id="resultsBtn" class="btn btn-outline-primary">Xem kết quả</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="progressCard" class="card mb-3" style="display:none;">
+            <div class="card-header">Tiến trình</div>
+            <div class="card-body">
+                <div class="progress mb-2">
+                    <div id="progressBar" class="progress-bar" style="width:0%">0%</div>
+                </div>
+                <div id="progressMessage" class="fw-semibold">Sẵn sàng...</div>
+                <div id="progressDetail" class="text-muted small"></div>
+            </div>
+        </div>
+
+        <div id="errorCard" class="card mb-3" style="display:none;">
+            <div class="card-header bg-danger text-white">Lỗi</div>
+            <div class="card-body">
+                <div id="errorMessage" class="fw-semibold text-danger"></div>
+                <div id="errorDetails" class="text-muted small mt-2" style="display:none;">
+                    <strong>Chi tiết lỗi:</strong>
+                    <pre class="bg-light p-2 mt-1" style="font-size:12px; max-height:200px; overflow-y:auto;"></pre>
+                </div>
+                <div class="mt-2">
+                    <button id="showErrorDetails" class="btn btn-sm btn-outline-danger">Xem chi tiết</button>
+                    <button id="hideError" class="btn btn-sm btn-secondary">Ẩn</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="successCard" class="card mb-3" style="display:none;">
+            <div class="card-header bg-success text-white">Thành công</div>
+            <div class="card-body">
+                <div id="successMessage" class="fw-semibold text-success"></div>
+                <div id="successStats" class="text-muted small mt-2"></div>
+                <div class="mt-2">
+                    <button id="hideSuccess" class="btn btn-sm btn-secondary">Ẩn</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="resultsCard" class="card" style="display:none;">
+            <div class="card-header">Kết quả gần đây</div>
+            <div class="card-body" id="resultsContainer"></div>
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Khởi tạo Socket.IO
-        const socket = io();
-        
-        let categories = [];
-        let selectedCategories = [];
-        
-        // DOM elements
-        const loadCategoriesBtn = document.getElementById('loadCategoriesBtn');
-        const categoriesSection = document.getElementById('categoriesSection');
-        const categoryGrid = document.getElementById('categoryGrid');
-        const categoryStats = document.getElementById('categoryStats');
-        const selectAllBtn = document.getElementById('selectAllBtn');
-        const deselectAllBtn = document.getElementById('deselectAllBtn');
-        const startCrawlBtn = document.getElementById('startCrawlBtn');
-        const progressSection = document.getElementById('progressSection');
-        const logSection = document.getElementById('logSection');
-        const maxProductsInput = document.getElementById('maxProductsInput');
-        
-        // Event listeners
-        loadCategoriesBtn.addEventListener('click', loadCategories);
-        selectAllBtn.addEventListener('click', selectAllCategories);
-        deselectAllBtn.addEventListener('click', deselectAllCategories);
-        startCrawlBtn.addEventListener('click', startCrawling);
-        
-        // Socket.IO event listeners
-        socket.on('progress_update', function(data) {
-            updateProgress(data.percent, data.message);
+        let socket = null;
+        document.addEventListener('DOMContentLoaded', () => {
+            socket = io();
+            socket.on('progress_update', (data) => updateProgress(data.percent, data.message, data.detail || ''));
+            socket.on('crawler_completed', (data) => {
+                updateProgress(100, data.message || 'Hoàn thành', '');
+                loadResults();
+                showSuccessMessage(data.message || 'Cào dữ liệu hoàn thành!', data.stats);
+            });
+            socket.on('crawler_error', (data) => {
+                showErrorMessage(data.message || 'Có lỗi xảy ra trong quá trình cào dữ liệu', data.error_details);
+                updateProgress(0, 'Lỗi', data.message || '');
+            });
+
+            document.getElementById('reloadCategories').addEventListener('click', loadCategories);
+            document.getElementById('loadSubcategories').addEventListener('click', loadSubcategories);
+            document.getElementById('loadBrands').addEventListener('click', loadBrands);
+            document.getElementById('startBtn').addEventListener('click', startCrawl);
+            document.getElementById('resultsBtn').addEventListener('click', loadResults);
+
+            // Error và Success card event listeners
+            document.getElementById('showErrorDetails').addEventListener('click', () => {
+                const details = document.getElementById('errorDetails');
+                details.style.display = details.style.display === 'none' ? 'block' : 'none';
+            });
+            document.getElementById('hideError').addEventListener('click', () => {
+                document.getElementById('errorCard').style.display = 'none';
+            });
+            document.getElementById('hideSuccess').addEventListener('click', () => {
+                document.getElementById('successCard').style.display = 'none';
+            });
+
+            loadCategories();
+            loadResults();
         });
-        
-        socket.on('log_message', function(data) {
-            addLogMessage(data.message, data.type || 'info');
-        });
-        
-        socket.on('crawl_complete', function(data) {
-            console.log('Crawl completed:', data);
-            
-            if (data.success) {
-                updateProgress(100, data.message);
-                
-                // Cập nhật thống kê từ server
-                if (data.statistics) {
-                    updateStatistics(data.statistics);
-                    document.getElementById('statsGrid').style.display = 'grid';
-                }
-                
-                // Hiển thị nút download nếu có
-                if (data.download_link) {
-                    window.downloadLink = data.download_link;
-                    document.getElementById('completionMessage').textContent = data.message;
-                    document.getElementById('downloadSection').style.display = 'block';
-                }
-                
-                addLogMessage('🎉 Crawling hoàn thành thành công!', 'success');
-            } else {
-                addLogMessage(`❌ Lỗi: ${data.error}`, 'error');
-            }
-            
-            // Re-enable start button
-            document.getElementById('startButton').disabled = false;
-            document.getElementById('startButton').innerHTML = '<i class="fas fa-play"></i> Bắt đầu Crawling';
-        });
-        
-        // Load categories from API
+
         async function loadCategories() {
-            loadCategoriesBtn.innerHTML = '<div class="loading-spinner"></div> Đang tải...';
-            loadCategoriesBtn.disabled = true;
-            
+            const sel = document.getElementById('categorySelect');
+            sel.innerHTML = '<option value="">-- Đang tải danh mục... --</option>';
             try {
-                const response = await fetch('/api/hoplong/categories');
-                const data = await response.json();
-                
-                if (data.success) {
-                    categories = data.categories;
-                    displayCategories();
-                    categoriesSection.style.display = 'block';
-                    
-                    categoryStats.textContent = `Tìm thấy ${data.total_categories} danh mục với tổng ${data.total_products.toLocaleString()} sản phẩm`;
-                } else {
-                    alert('Lỗi tải danh mục: ' + data.error);
-                }
-            } catch (error) {
-                alert('Lỗi kết nối: ' + error.message);
-            } finally {
-                loadCategoriesBtn.innerHTML = '<i class="fas fa-download"></i> Tải danh sách danh mục';
-                loadCategoriesBtn.disabled = false;
-            }
-        }
-        
-        // Display categories in grid
-        function displayCategories() {
-            categoryGrid.innerHTML = '';
-            
-            categories.forEach((category, index) => {
-                const categoryItem = document.createElement('div');
-                categoryItem.className = 'category-item';
-                categoryItem.innerHTML = `
-                    <div class="category-name">${category.name}</div>
-                    <div class="category-count">${category.product_count.toLocaleString()} sản phẩm</div>
-                `;
-                
-                categoryItem.addEventListener('click', () => toggleCategory(index));
-                categoryGrid.appendChild(categoryItem);
-            });
-        }
-        
-        // Toggle category selection
-        function toggleCategory(index) {
-            const categoryItem = categoryGrid.children[index];
-            const category = categories[index];
-            
-            if (selectedCategories.some(c => c.name === category.name)) {
-                // Remove from selection
-                selectedCategories = selectedCategories.filter(c => c.name !== category.name);
-                categoryItem.classList.remove('selected');
-            } else {
-                // Add to selection
-                selectedCategories.push(category);
-                categoryItem.classList.add('selected');
-            }
-            
-            updateStartButton();
-        }
-        
-        // Select all categories
-        function selectAllCategories() {
-            selectedCategories = [...categories];
-            Array.from(categoryGrid.children).forEach(item => {
-                item.classList.add('selected');
-            });
-            updateStartButton();
-        }
-        
-        // Deselect all categories
-        function deselectAllCategories() {
-            selectedCategories = [];
-            Array.from(categoryGrid.children).forEach(item => {
-                item.classList.remove('selected');
-            });
-            updateStartButton();
-        }
-        
-        // Update start button state
-        function updateStartButton() {
-            startCrawlBtn.disabled = selectedCategories.length === 0;
-            startCrawlBtn.innerHTML = `<i class="fas fa-play"></i> Bắt đầu Crawling (${selectedCategories.length} danh mục)`;
-        }
-        
-        // Start crawling process
-        async function startCrawling() {
-            if (selectedCategories.length === 0) return;
-            
-            startCrawlBtn.innerHTML = '<div class="loading-spinner"></div> Đang crawling...';
-            startCrawlBtn.disabled = true;
-            
-            // Show progress and log sections
-            progressSection.style.display = 'block';
-            logSection.style.display = 'block';
-            
-            // Clear previous logs
-            document.getElementById('logContent').innerHTML = '';
-            
-            const maxProducts = maxProductsInput.value ? parseInt(maxProductsInput.value) : null;
-            
-            try {
-                const response = await fetch('/api/hoplong/crawl', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        categories: selectedCategories,
-                        max_products_per_category: maxProducts
-                    })
+                const resp = await fetch('/hoplong/categories');
+                const data = await resp.json();
+                sel.innerHTML = '<option value="">-- Chọn danh mục --</option>';
+                (data.categories || []).forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.url; opt.textContent = c.name;
+                    sel.appendChild(opt);
                 });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    addLogMessage('🚀 ' + data.message, 'success');
-                    updateProgress(5, 'Đã bắt đầu crawling...');
-                } else {
-                    alert('Lỗi bắt đầu crawling: ' + data.error);
-                    startCrawlBtn.innerHTML = '<i class="fas fa-play"></i> Bắt đầu Crawling';
-                    startCrawlBtn.disabled = false;
+            } catch (e) {
+                sel.innerHTML = '<option value="">-- Lỗi tải danh mục --</option>';
+            }
+        }
+
+        async function loadSubcategories() {
+            const sel = document.getElementById('categorySelect');
+            const url = sel.value;
+            const box = document.getElementById('subcategoryContainer');
+            box.innerHTML = '';
+            if (!url) {
+                alert('Vui lòng chọn danh mục chính trước');
+                return;
+            }
+
+            box.innerHTML = '<span class="text-info">Đang tải danh mục con...</span>';
+
+            try {
+                const resp = await fetch('/hoplong/subcategories?category=' + encodeURIComponent(url));
+                const data = await resp.json();
+                box.innerHTML = '';
+
+                if (!data.success) {
+                    box.innerHTML = '<span class="text-danger">Lỗi: ' + (data.message || 'Không thể tải danh mục con') + '</span>';
+                    return;
                 }
-            } catch (error) {
-                alert('Lỗi kết nối: ' + error.message);
-                startCrawlBtn.innerHTML = '<i class="fas fa-play"></i> Bắt đầu Crawling';
-                startCrawlBtn.disabled = false;
+
+                (data.subcategories || []).forEach(sc => {
+                    const lbl = document.createElement('label');
+                    lbl.className = 'btn btn-outline-primary btn-sm';
+                    lbl.style.marginRight = '6px';
+                    lbl.style.marginBottom = '6px';
+
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.value = sc.url;
+                    cb.className = 'me-1';
+
+                    lbl.appendChild(cb);
+                    lbl.appendChild(document.createTextNode(sc.name + ' (' + sc.product_count + ')'));
+                    box.appendChild(lbl);
+                });
+
+                if ((data.subcategories || []).length === 0) {
+                    box.innerHTML = '<span class="text-warning">Không tìm thấy danh mục con nào.</span>';
+                }
+            } catch (e) {
+                box.innerHTML = '<span class="text-danger">Lỗi tải danh mục con: ' + e.message + '</span>';
             }
         }
-        
-        // Update progress bar
-        function updateProgress(percent, message) {
-            const progressBar = document.getElementById('progressBar');
-            const progressText = document.getElementById('progressText');
-            
-            progressBar.style.width = percent + '%';
-            progressText.textContent = message;
+
+        async function loadBrands() {
+            const selectedSubcategories = getSelectedSubcategories();
+            const box = document.getElementById('brandContainer');
+            box.innerHTML = '';
+
+            if (selectedSubcategories.length === 0) {
+                alert('Vui lòng chọn ít nhất một danh mục con trước');
+                return;
+            }
+
+            box.innerHTML = '<span class="text-info">Đang tải hãng sản xuất...</span>';
+
+            try {
+                // Lấy brands từ subcategory đầu tiên (có thể mở rộng sau)
+                const firstSubcategory = selectedSubcategories[0];
+                const resp = await fetch('/hoplong/brands?category=' + encodeURIComponent(firstSubcategory));
+                const data = await resp.json();
+                box.innerHTML = '';
+
+                if (!data.success) {
+                    box.innerHTML = '<span class="text-danger">Lỗi: ' + (data.message || 'Không thể tải hãng') + '</span>';
+                    return;
+                }
+
+                (data.brands || []).forEach(b => {
+                    const lbl = document.createElement('label');
+                    lbl.className = 'btn btn-outline-secondary btn-sm';
+                    lbl.style.marginRight = '6px';
+                    lbl.style.marginBottom = '6px';
+
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.value = b;
+                    cb.className = 'me-1';
+
+                    lbl.appendChild(cb);
+                    lbl.appendChild(document.createTextNode(b));
+                    box.appendChild(lbl);
+                });
+
+                if ((data.brands || []).length === 0) {
+                    box.innerHTML = '<span class="text-warning">Không tìm thấy hãng nào.</span>';
+                }
+            } catch (e) {
+                box.innerHTML = '<span class="text-danger">Lỗi tải hãng: ' + e.message + '</span>';
+            }
         }
-        
-        // Add log message
-        function addLogMessage(message, type = 'info') {
-            const logContent = document.getElementById('logContent');
-            const timestamp = new Date().toLocaleTimeString();
-            
-            const logEntry = document.createElement('div');
-            logEntry.className = `log-entry ${type}`;
-            logEntry.textContent = `[${timestamp}] ${message}`;
-            
-            logContent.appendChild(logEntry);
-            logContent.scrollTop = logContent.scrollHeight;
+
+        function getSelectedSubcategories() {
+            return Array.from(document.querySelectorAll('#subcategoryContainer input[type=checkbox]:checked')).map(x => x.value);
         }
-        
-        // Update statistics
-        function updateStatistics(stats) {
-            document.getElementById('totalProducts').textContent = stats.total_products || 0;
-            document.getElementById('successProducts').textContent = stats.successful_products || 0;
-            document.getElementById('failedProducts').textContent = stats.failed_products || 0;
-            document.getElementById('totalBrands').textContent = stats.brands_count || 0;
-            document.getElementById('successRate').textContent = stats.success_rate ? stats.success_rate + '%' : '0%';
-            document.getElementById('crawlDuration').textContent = stats.crawl_duration || '0s';
+
+        function getSelectedBrands() {
+            return Array.from(document.querySelectorAll('#brandContainer input[type=checkbox]:checked')).map(x => x.value);
         }
-        
-        // Download function
-        function downloadResults() {
-            if (window.downloadLink) {
-                window.open(window.downloadLink, '_blank');
-                addLogMessage('📥 Bắt đầu tải xuống file ZIP...', 'info');
+
+        async function startCrawl() {
+            const category = document.getElementById('categorySelect').value;
+            const subcategories = getSelectedSubcategories();
+            const brands = getSelectedBrands();
+            const maxWorkers = parseInt(document.getElementById('maxWorkers').value || '10', 10);
+
+            if (!category) { alert('Chọn danh mục chính'); return; }
+            if (!subcategories.length) { alert('Chọn ít nhất 1 danh mục con'); return; }
+            if (!brands.length) { alert('Chọn ít nhất 1 hãng'); return; }
+
+            document.getElementById('progressCard').style.display = 'block';
+            updateProgress(0, 'Bắt đầu...', '');
+
+            // Gửi subcategories thay vì category chính
+            const resp = await fetch('/crawl-hoplong', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    category: subcategories[0], // Sử dụng subcategory đầu tiên
+                    subcategories: subcategories,
+                    brands: brands,
+                    max_workers: maxWorkers
+                })
+            });
+            const data = await resp.json();
+            if (!data.success) alert(data.message || 'Lỗi khởi chạy crawler');
+        }
+
+        async function loadResults() {
+            const box = document.getElementById('resultsContainer');
+            const card = document.getElementById('resultsCard');
+            card.style.display = 'block';
+            box.innerHTML = 'Đang tải...';
+            try {
+                const resp = await fetch('/list-hoplong-results');
+                const data = await resp.json();
+                if (!data.success) { box.innerHTML = 'Lỗi tải kết quả'; return; }
+                const arr = data.results || [];
+                if (!arr.length) { box.innerHTML = 'Chưa có kết quả.'; return; }
+                let html = '';
+                arr.forEach(r => {
+                    html += `<div class="border rounded p-3 mb-2 d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="fw-semibold">${r.folder_name}</div>
+                            <div class="text-muted small">Categories: ${r.category_count} | Products: ${r.product_count} | Images: ${r.image_count} | Created: ${r.created_time}</div>
+                        </div>
+                        <a class="btn btn-sm btn-success" href="/download-hoplong-result/${r.folder_name}">Tải ZIP</a>
+                    </div>`;
+                });
+                box.innerHTML = html;
+            } catch (e) {
+                box.innerHTML = 'Lỗi kết nối.';
+            }
+        }
+
+        function updateProgress(p, m, d) {
+            const bar = document.getElementById('progressBar');
+            const msg = document.getElementById('progressMessage');
+            const det = document.getElementById('progressDetail');
+            bar.style.width = (p || 0) + '%';
+            bar.textContent = Math.round(p || 0) + '%';
+            msg.textContent = m || '';
+            det.textContent = d || '';
+        }
+
+        function showErrorMessage(message, errorDetails) {
+            const errorCard = document.getElementById('errorCard');
+            const errorMessage = document.getElementById('errorMessage');
+            const errorDetailsDiv = document.getElementById('errorDetails');
+            const errorDetailsPre = errorDetailsDiv.querySelector('pre');
+
+            errorMessage.textContent = message;
+
+            if (errorDetails) {
+                errorDetailsPre.textContent = errorDetails;
+                document.getElementById('showErrorDetails').style.display = 'inline-block';
             } else {
-                addLogMessage('❌ Không có file để tải xuống', 'error');
+                document.getElementById('showErrorDetails').style.display = 'none';
             }
+
+            errorDetailsDiv.style.display = 'none';
+            errorCard.style.display = 'block';
+
+            // Ẩn success card nếu đang hiển thị
+            document.getElementById('successCard').style.display = 'none';
+        }
+
+        function showSuccessMessage(message, stats) {
+            const successCard = document.getElementById('successCard');
+            const successMessage = document.getElementById('successMessage');
+            const successStats = document.getElementById('successStats');
+
+            successMessage.textContent = message;
+
+            if (stats) {
+                let statsText = `Danh mục xử lý: ${stats.categories_processed || 0}, `;
+                statsText += `Hãng xử lý: ${stats.brands_processed || 0}, `;
+                statsText += `Sản phẩm tìm thấy: ${stats.products_found || 0}, `;
+                statsText += `Sản phẩm xử lý: ${stats.products_processed || 0}`;
+                if (stats.errors > 0) {
+                    statsText += `, Lỗi: ${stats.errors}`;
+                }
+                successStats.textContent = statsText;
+            } else {
+                successStats.textContent = '';
+            }
+
+            successCard.style.display = 'block';
+
+            // Ẩn error card nếu đang hiển thị
+            document.getElementById('errorCard').style.display = 'none';
         }
     </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
-</html> 
+
+</html>

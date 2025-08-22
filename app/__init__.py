@@ -2,7 +2,6 @@ from flask import Flask
 import os
 from flask_socketio import SocketIO
 # Import HoplongCrawler routes
-from .hoplong_routes import register_hoplong_routes
 
 # Tạo đối tượng SocketIO
 socketio = SocketIO()
@@ -35,6 +34,5 @@ def create_app():
     # Khởi tạo SocketIO với ứng dụng Flask
     socketio.init_app(app, cors_allowed_origins="*")
 
-    # Đăng ký HoplongCrawler routes
-    register_hoplong_routes(app, socketio)
+    # (Đã gỡ bỏ) Đăng ký HoplongCrawler routes
     return app 

@@ -12,15 +12,27 @@
                 </div>
                 <div class="card-body">
                     <div class="alert alert-success">
+                        {% if crawler_type == "BAA Qlight" %}
+                        <h5>Đã cào thành công {{ products_count }} sản phẩm từ BAA Qlight!</h5>
+                        <p>Dữ liệu đã được xử lý với tính năng đa luồng, chuyển đổi ảnh WebP và phân loại theo series.
+                        </p>
+                        {% else %}
                         <h5>Đã cào thành công {{ products_count }} sản phẩm từ BAA.vn!</h5>
                         <p>File ZIP đã sẵn sàng để tải xuống.</p>
+                        {% endif %}
                     </div>
-                    
+
                     <div class="row">
                         <div class="col-md-6">
                             <div class="card mb-4">
                                 <div class="card-header bg-primary text-white">
-                                    <h5 class="mb-0">Thông tin thống kê</h5>
+                                    <h5 class="mb-0">
+                                        {% if crawler_type == "BAA Qlight" %}
+                                        Thông tin thống kê BAA Qlight
+                                        {% else %}
+                                        Thông tin thống kê
+                                        {% endif %}
+                                    </h5>
                                 </div>
                                 <div class="card-body">
                                     <table class="table table-striped">
@@ -33,10 +45,23 @@
                                             {% endfor %}
                                         </tbody>
                                     </table>
+
+                                    {% if crawler_type == "BAA Qlight" %}
+                                    <div class="alert alert-info mt-3">
+                                        <h6><i class="bi bi-info-circle-fill me-2"></i>Tính năng đặc biệt:</h6>
+                                        <ul class="mb-0">
+                                            <li>✅ Cào dữ liệu đa luồng</li>
+                                            <li>✅ Xử lý Series thông minh</li>
+                                            <li>✅ Chuyển đổi ảnh WebP</li>
+                                            <li>✅ Xuất Excel theo Series</li>
+                                            <li>✅ File tổng hợp và báo cáo</li>
+                                        </ul>
+                                    </div>
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>
-                        
+
                         <div class="col-md-6">
                             <div class="card">
                                 <div class="card-header bg-primary text-white">
@@ -54,7 +79,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="mt-4">
                         <a href="{{ url_for('main.index') }}" class="btn btn-secondary">
                             <i class="fas fa-arrow-left"></i> Quay lại trang chủ
@@ -65,4 +90,4 @@
         </div>
     </div>
 </div>
-{% endblock %} 
+{% endblock %}
